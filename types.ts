@@ -10,6 +10,7 @@ export enum FragmentType {
   TEXT = 'TEXT',
   IMAGE = 'IMAGE',
   LINK = 'LINK',
+  FRAME = 'FRAME',
 }
 
 export interface Position {
@@ -53,14 +54,14 @@ export const PALETTE = {
   text: '#1A1A1A', // Sharp Charcoal
   ui_chrome: '#FFFFFF', // Pure White
   grid: '#E2E2E2', // Neutral Grey
-  
+
   // Accents (Slightly more vibrant to pop against white)
   teal: '#2E8B8B',
   aqua: '#5FB3B0',
   orange: '#E67E5A',
   pink: '#E07A8A',
   purple: '#9B8DBF',
-  
+
   shadow: 'rgba(0, 0, 0, 0.08)',
   highlight: '#FFFFFF',
 };
