@@ -28,3 +28,8 @@ export const ensureOrchestrator = () => {
 
 // Legacy stub (optional, only if orchestrator not desired)
 export const attachStub = () => attachOrchestratorStub(eventBus, contextStore);
+
+// Auto-attach orchestrator in browser runtime so eventBus always has subscribers.
+if (typeof window !== "undefined") {
+  ensureOrchestrator();
+}

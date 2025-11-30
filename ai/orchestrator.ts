@@ -7,6 +7,8 @@ import { runPuzzleDesignerAgent } from "./agents/puzzleDesignerAgent";
 import { runQuadrantPieceAgent } from "./agents/quadrantPieceAgent";
 import {
   Fragment,
+  PuzzlePiece,
+  Anchor,
   UIEvent,
   UIEventType,
 } from "../domain/models";
@@ -62,6 +64,44 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
   const debouncedFragments = debounce(handleFragmentBurst, 500);
 
+  const createPuzzleFromDesign = (
+    puzzleId: string,
+    centralQuestion: string,
+    design: any,
+    createdFrom: "user_request" | "ai_suggested",
+  ) => {
+    const puzzle = {
+      id: puzzleId,
+      centralQuestion: centralQuestion,
+      projectId: store.getState().project.id,
+      createdFrom,
+      createdAt: Date.now(),
+    };
+    const anchors: Anchor[] = [
+      { id: `${puzzleId}-a-start`, puzzleId, type: "STARTING", text: design?.anchors?.starting || "" },
+      { id: `${puzzleId}-a-solution`, puzzleId, type: "SOLUTION", text: design?.anchors?.solution || "" },
+    ];
+    const seedPieces: PuzzlePiece[] = (design?.seedPieces || []).map((p: any, idx: number) => ({
+      id: `${puzzleId}-seed-${idx}`,
+      puzzleId,
+      mode: p.mode,
+      category: p.category,
+      text: p.text,
+      userAnnotation: "",
+      anchorIds: [],
+      fragmentLinks: [],
+      source: "AI",
+      status: "SUGGESTED",
+    }));
+
+    store.setState(draft => {
+      draft.puzzles.push(puzzle);
+      draft.anchors.push(...anchors);
+      draft.puzzlePieces.push(...seedPieces);
+    });
+    return { puzzle, anchors, seedPieces };
+  };
+
   const handleMascot = async (event: UIEvent) => {
     const state = store.getState();
     const payload: any = event.payload || {};
@@ -80,7 +120,22 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       store.setState(draft => {
         draft.agentState.mascot.lastProposal = { ...proposal, suggestedAt: Date.now() };
       });
-      // TODO: hand off to Puzzle Designer Agent to create actual puzzle/session.
+      // Design puzzle and create records
+      const design = await runPuzzleDesignerAgent(
+        {
+          task: "design",
+          processAim: state.project.processAim,
+          proposedCentralQuestion: proposal.centralQuestion,
+          primaryModes: proposal.primaryModes,
+          rationaleFromMascot: proposal.rationale,
+          relatedClusters: state.clusters.map(c => ({ theme: c.theme, fragmentSummaries: [] })),
+          relatedPuzzleSummaries: state.puzzleSummaries.map(s => ({ title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
+        },
+        client,
+      ) as any;
+      const newId = `p-${Date.now()}`;
+      createPuzzleFromDesign(newId, proposal.centralQuestion, design, "user_request");
+      console.info("[mascot:self] puzzle created", newId);
     } else if (payload.action === "suggest_puzzle") {
       const suggestion = await runMascotSuggest(
         {
@@ -95,6 +150,23 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       store.setState(draft => {
         draft.agentState.mascot.lastSuggestion = { ...suggestion, suggestedAt: Date.now() };
       });
+      if (suggestion.shouldSuggest !== false) {
+        const design = await runPuzzleDesignerAgent(
+          {
+            task: "design",
+            processAim: state.project.processAim,
+            proposedCentralQuestion: suggestion.centralQuestion || "What should we explore next?",
+            primaryModes: suggestion.primaryModes || ["FUNCTION"],
+            rationaleFromMascot: suggestion.rationale || "",
+            relatedClusters: state.clusters.map(c => ({ theme: c.theme, fragmentSummaries: [] })),
+            relatedPuzzleSummaries: state.puzzleSummaries.map(s => ({ title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
+          },
+          client,
+        ) as any;
+        const newId = `p-${Date.now()}`;
+        createPuzzleFromDesign(newId, suggestion.centralQuestion || "Next puzzle", design, "ai_suggested");
+        console.info("[mascot:suggest] puzzle created", newId);
+      }
     }
   };
 

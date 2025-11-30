@@ -195,6 +195,16 @@ export default function App() {
       setStoreFragments(state.fragments);
       setPuzzleSummaries(state.puzzleSummaries);
       setStoreClusters(state.clusters);
+      // Map domain puzzles to UI deck entries
+      if (state.puzzles.length) {
+        setPuzzles(state.puzzles.map(p => ({
+          id: p.id,
+          leverId: levers[0]?.id || 'L1',
+          title: p.centralQuestion,
+          type: 'clarify',
+          description: '',
+        })));
+      }
       console.debug("[app] store updated", {
         fragments: state.fragments.length,
         summaries: state.puzzleSummaries.length,
@@ -234,32 +244,23 @@ export default function App() {
     prevFragmentsRef.current = fragments;
   }, [fragments]);
 
-  // Sync puzzles into ProjectStore (deck keeps all puzzles; summary status handled elsewhere)
+  // Seed initial puzzles into store once (only if store is empty to avoid loops)
   useEffect(() => {
-    const prevMap = new Map(prevPuzzlesRef.current.map(p => [p.id, p]));
-    puzzles.forEach(p => {
-      const prev = prevMap.get(p.id);
-      const domainPuzzle = {
-        id: p.id,
-        projectId: PROJECT_ID,
-        centralQuestion: p.title,
-        createdFrom: "user_request" as const,
-        createdAt: now(),
-      };
-      if (!prev) {
-        contextStore.upsertPuzzle(domainPuzzle);
+    const state = contextStore.getState();
+    if (state.puzzles.length === 0 && puzzles.length) {
+      puzzles.forEach(p => {
+        contextStore.upsertPuzzle({
+          id: p.id,
+          projectId: PROJECT_ID,
+          centralQuestion: p.title,
+          createdFrom: "user_request",
+          createdAt: now(),
+        });
         eventBus.emitType("PUZZLE_CREATED", { puzzleId: p.id });
-      } else {
-        contextStore.upsertPuzzle(domainPuzzle);
-        eventBus.emitType("PUZZLE_UPDATED", { puzzleId: p.id });
-      }
-      prevMap.delete(p.id);
-    });
-    prevMap.forEach((_, id) => {
-      // No delete yet; deck keeps historical puzzle entries
-    });
-    prevPuzzlesRef.current = puzzles;
-  }, [puzzles]);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {

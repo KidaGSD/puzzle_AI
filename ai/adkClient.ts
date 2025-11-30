@@ -67,13 +67,13 @@ export const createLLMClient = (): LLMClient => {
   return {
     isMock: false,
     async generate(prompt: string, temperature = 0.6) {
-      const res = await genAI.models.generateContent({
+      const req: any = {
         model: defaultModel,
         contents: prompt,
-        generationConfig: {
-          temperature,
-        },
-      });
+      };
+      // generationConfig may not be in typed surface; keep via loose type.
+      req.generationConfig = { temperature };
+      const res = await genAI.models.generateContent(req);
       return cleanText(res.text);
     },
   };
