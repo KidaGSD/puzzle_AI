@@ -70,7 +70,7 @@ Guidelines for coding agents working on the Puzzle app and its AI systems.
 - **Vertical slices，但保持完整骨架**：
   - 每次实现时，目标是打一条贯穿的「vertical slice」：UI → API → service → store / ai。
   - 即使只实现最小功能，也要按完整架构分层，避免「临时绕路」变成长期债务。
-- **小而清晰的改动**：
+- **清晰的改动**：
   - 每个 branch / PR 针对一个明确主题（例如 “add puzzle session state model”）。
   - 避免单 PR 同时改大量不相关文件。
 - **解决冲突时**：

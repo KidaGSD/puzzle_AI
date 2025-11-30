@@ -103,6 +103,8 @@ export const createContextStore = (
     if (!prev) return null;
     future.push(cloneStore(state));
     state = prev;
+    // Notify subscribers so UI re-renders
+    subscribers.forEach(fn => fn());
     return state;
   };
 

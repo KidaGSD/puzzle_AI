@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { Undo2, Redo2, Share2, ZoomIn, ZoomOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Undo2, Redo2, Share2, ZoomIn, ZoomOut, Info } from 'lucide-react';
 
 interface TopBarProps {
   projectTitle: string;
@@ -19,6 +19,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onZoomIn,
   onZoomOut
 }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const isEmpty = !aim.trim();
+
   return (
     <>
       {/* Top Blue Status Bar */}
@@ -30,21 +33,47 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="flex items-center gap-6 pointer-events-auto">
           {/* Logo Section */}
           <div className="flex items-center gap-3">
-            <img src="/Vector.png" alt="Puzzle AI" className="w-8 h-8 object-contain" />
+            <img src="/Frame 1.svg" alt="Puzzle AI" className="w-8 h-8 object-contain" />
             <span className="text-xl font-extrabold text-gray-900 tracking-tight">Puzzle AI</span>
             <span className="text-gray-300">/</span>
             <span className="text-lg font-semibold text-gray-700">{projectTitle}</span>
           </div>
 
-          {/* Input Field */}
-          <div className="w-[400px]">
+          {/* Input Field with Info Icon */}
+          <div className="w-[400px] relative">
             <input
               type="text"
               value={aim}
               onChange={(e) => setAim(e.target.value)}
-              className="w-full bg-transparent backdrop-blur-sm border border-gray-200 rounded-lg px-4 py-2 text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20 focus:border-[#3B82F6] shadow-sm font-medium transition-all text-sm"
+              className={`w-full bg-transparent backdrop-blur-sm border rounded-lg px-4 py-2 pr-10 text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20 shadow-sm font-medium transition-all text-sm ${isEmpty
+                  ? 'border-yellow-400 focus:border-yellow-500'
+                  : 'border-gray-200 focus:border-[#3B82F6]'
+                }`}
               placeholder="Write your project brief here"
             />
+
+            {/* Info Icon */}
+            <div
+              className="absolute right-3 top-1/2 -translate-y-1/2"
+              onMouseEnter={() => setShowTooltip(true)}
+              onMouseLeave={() => setShowTooltip(false)}
+            >
+              <Info
+                size={16}
+                className={`cursor-help ${isEmpty ? 'text-yellow-600' : 'text-gray-400'}`}
+              />
+
+              {/* Tooltip */}
+              {showTooltip && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg z-50">
+                  <div className="font-semibold mb-1">Process Aim</div>
+                  <div className="text-gray-300 leading-relaxed">
+                    This guides all AI suggestions for your project. Describe what you're trying to achieve or explore.
+                  </div>
+                  <div className="absolute -top-1 right-3 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

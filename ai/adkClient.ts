@@ -70,7 +70,7 @@ export const createLLMClient = (): LLMClient => {
       const res = await genAI.models.generateContent({
         model: defaultModel,
         contents: prompt,
-        generationConfig: {
+        config: {
           temperature,
         },
       });

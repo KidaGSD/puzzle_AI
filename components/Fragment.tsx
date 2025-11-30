@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
 import { GripVertical, Link2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
   data: FragmentData;
@@ -154,6 +155,39 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
             )}
           </div>
         )}
+
+        {/* Puzzle Labels */}
+        {!isFrame && (() => {
+          const storeFragment = contextStore.getState().fragments.find(f => f.id === data.id);
+          const labels = storeFragment?.labels || [];
+          if (labels.length === 0) return null;
+
+          return (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {labels.map((puzzleId, idx) => {
+                const puzzle = contextStore.getState().puzzles.find(p => p.id === puzzleId);
+                if (!puzzle) return null;
+
+                const questionPreview = puzzle.centralQuestion?.slice(0, 20) || 'Puzzle';
+                const hue = (idx * 137.5) % 360;
+
+                return (
+                  <span
+                    key={puzzleId}
+                    className="px-2 py-0.5 text-xs rounded-full"
+                    style={{
+                      backgroundColor: `hsl(${hue}, 70%, 85%)`,
+                      color: `hsl(${hue}, 70%, 30%)`
+                    }}
+                    title={puzzle.centralQuestion}
+                  >
+                    📌 {questionPreview}{puzzle.centralQuestion && puzzle.centralQuestion.length > 20 ? '...' : ''}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Resize Handle */}

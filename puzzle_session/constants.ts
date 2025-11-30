@@ -1,0 +1,60 @@
+
+import { QUADRANT_COLORS, SYSTEM_COLORS } from '../constants/colors';
+
+export const CELL_SIZE = 64; // px
+export const GRID_GAP = 0;
+
+export const COLORS = {
+  form: QUADRANT_COLORS.FORM,
+  motion: QUADRANT_COLORS.MOTION,
+  expression: QUADRANT_COLORS.EXPRESSION,
+  function: QUADRANT_COLORS.FUNCTION,
+  darkCard: SYSTEM_COLORS.darkCard,
+  gridDot: SYSTEM_COLORS.gridDot,
+  ghost: 'rgba(0,0,0,0.1)'
+};
+
+export const QUADRANTS = {
+  TL: 'Form',
+  TR: 'Motion',
+  BL: 'Expression',
+  BR: 'Function',
+};
+
+// Center card dimensions in grid units (Must be even for perfect centering on grid lines)
+export const CENTER_CARD_WIDTH = 2;
+export const CENTER_CARD_HEIGHT = 2;
+
+// Shapes 1-8 from the reference guide
+export const SHAPES = {
+  // 1. Horizontal L (3 wide bottom, 2 high right)
+  SHAPE_1: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 0 }],
+
+  // 2. Fat T (3 wide bottom, center up)
+  SHAPE_2: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 0 }],
+
+  // 3. Square 2x2
+  SHAPE_3: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+
+  // 4. Horizontal Z (Top-left start) -> [{x:0,0}, {x:1,0}, {x:1,1}, {x:2,1}]
+  SHAPE_4: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }],
+
+  // 5. Horizontal Bar 3x1
+  SHAPE_5: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }],
+
+  // 6. Vertical Bar 1x2 (Reference looks short)
+  SHAPE_6: [{ x: 0, y: 0 }, { x: 0, y: 1 }],
+
+  // 7. Big Gamma / Gun (3 tall left, 2 wide top) -> [{0,0},{0,1},{0,2},{1,0}]
+  // Reference image shape 7: 
+  // Row 0: [x, x]
+  // Row 1: [x, _]
+  // Row 2: [x, _] 
+  // Actually looking at image 7: It's 2 wide at top, 3 tall on left.
+  SHAPE_7: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }],
+
+  // 8. Vertical S/Z 
+  SHAPE_8: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }],
+};
+
+export const ALL_SHAPES = Object.values(SHAPES);

@@ -1,0 +1,5 @@
+{
+  "name": "Puzzle AI",
+  "description": "A fixed puzzle board UI with drag-and-drop mechanics, infinite grid aesthetics, and responsive quadrant-based interaction.",
+  "requestFramePermissions": []
+}

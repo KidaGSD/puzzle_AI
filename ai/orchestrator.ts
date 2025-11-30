@@ -10,6 +10,10 @@ import {
   UIEvent,
   UIEventType,
 } from "../domain/models";
+import { MascotProposal } from "./agents/mascotAgent";
+
+// Callback type for mascot proposals - passed in to avoid circular dependency
+type MascotProposalCallback = (proposal: MascotProposal) => void;
 
 type DebouncedFn = (() => void) & { cancel?: () => void };
 
@@ -25,7 +29,21 @@ const debounce = (fn: () => void, delay: number): DebouncedFn => {
   return wrapper;
 };
 
+// Module-level callback storage (set from runtime.ts)
+let mascotProposalCallback: MascotProposalCallback | null = null;
+
+export const setMascotCallback = (callback: MascotProposalCallback) => {
+  mascotProposalCallback = callback;
+};
+
+const notifyMascotProposal = (proposal: MascotProposal) => {
+  if (mascotProposalCallback) {
+    mascotProposalCallback(proposal);
+  }
+};
+
 export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
+  console.log('[orchestrator] Attaching orchestrator to eventBus...');
   const client = createLLMClient();
 
   const handleFragmentBurst = async () => {
@@ -77,7 +95,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         client,
       );
       console.info("[mascot:self]", proposal);
-      // TODO: hand off to Puzzle Designer Agent to create actual puzzle/session.
+      // Notify UI with the proposal (using module-level callback)
+      notifyMascotProposal(proposal);
     } else if (payload.action === "suggest_puzzle") {
       const suggestion = await runMascotSuggest(
         {
@@ -89,6 +108,14 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         client,
       );
       console.info("[mascot:suggest]", suggestion);
+      // If AI suggests a puzzle, notify UI
+      if (suggestion.shouldSuggest && suggestion.centralQuestion) {
+        notifyMascotProposal({
+          centralQuestion: suggestion.centralQuestion,
+          primaryModes: suggestion.primaryModes || [],
+          rationale: suggestion.rationale || "",
+        });
+      }
     }
   };
 
@@ -162,6 +189,14 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     });
   };
 
+  // Helper to safely execute async handlers with error logging
+  const safeAsync = (handler: () => Promise<void>, eventType: string) => {
+    handler().catch((err) => {
+      console.error(`[orchestrator] Error handling ${eventType}:`, err);
+      // Could emit an error event here for UI notification
+    });
+  };
+
   const unsubscribe = bus.subscribe((event: UIEvent) => {
     console.debug("[orchestrator] event received", event.type);
     switch (event.type as UIEventType) {
@@ -171,21 +206,26 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         debouncedFragments();
         break;
       case "MASCOT_CLICKED":
-        handleMascot(event);
+        console.log('[orchestrator] handling MASCOT_CLICKED');
+        safeAsync(() => handleMascot(event), "MASCOT_CLICKED");
         break;
       case "PUZZLE_FINISH_CLICKED":
-        handlePuzzleFinish(event);
+        console.log('[orchestrator] handling PUZZLE_FINISH_CLICKED');
+        safeAsync(() => handlePuzzleFinish(event), "PUZZLE_FINISH_CLICKED");
         break;
       case "PIECE_CREATED":
         // PIECE_CREATED with payload { mode, category, puzzle, anchors }
-        handleQuadrantPiece(event);
+        safeAsync(() => handleQuadrantPiece(event), "PIECE_CREATED");
         break;
       default:
         break;
     }
   });
 
+  console.log('[orchestrator] Subscribed to eventBus, returning cleanup function');
+
   return () => {
+    console.log('[orchestrator] Cleanup: unsubscribing from eventBus');
     unsubscribe();
     debouncedFragments.cancel?.();
   };
