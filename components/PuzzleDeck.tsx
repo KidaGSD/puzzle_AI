@@ -1,8 +1,9 @@
 
 import React from 'react';
 import { Puzzle, Lever } from '../types';
-import { Gamepad2, ChevronRight, HelpCircle, GripHorizontal, CheckCircle2 } from 'lucide-react';
+import { Gamepad2, ChevronRight, HelpCircle, CheckCircle2, Check } from 'lucide-react';
 import { PuzzleSummary } from '../domain/models';
+import { eventBus, contextStore } from '../store/runtime';
 
 interface PuzzleDeckProps {
   activeLeverId: string | null;
@@ -111,11 +112,13 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                       {puzzle.title}
                     </h3>
 
-                    {isFinished && (
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase tracking-wide mb-2">
-                        <CheckCircle2 size={12} /> Finished
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wide mb-2">
+                      {isFinished ? (
+                        <span className="flex items-center gap-1 text-emerald-600"><CheckCircle2 size={12} /> Finished</span>
+                      ) : (
+                        <span className="text-amber-600">Active</span>
+                      )}
+                    </div>
 
                     <div className="mt-auto flex items-center gap-1 opacity-60">
                       {puzzle.type === 'expand' && <ChevronRight size={12} />}
@@ -126,6 +129,24 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                   </div>
                 </div>
               </div>
+              {!isFinished && (
+                <button
+                  className="absolute -top-3 -right-3 bg-emerald-600 text-white text-[11px] px-2 py-1 rounded-full shadow hover:bg-emerald-700"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const fragments = contextStore.getState().fragments;
+                    eventBus.emitType("PUZZLE_FINISH_CLICKED", {
+                      puzzleId: puzzle.id,
+                      centralQuestion: puzzle.title,
+                      anchors: [],
+                      pieces: [],
+                      fragmentIds: fragments.map(f => f.id)
+                    });
+                  }}
+                >
+                  Finish
+                </button>
+              )}
 
               {/* Hover Glow */}
               <div

@@ -147,6 +147,19 @@ export interface AgentState {
     hasShownOnboarding: boolean;
     lastReflectionAt: number;
     reflectionsDisabled: boolean;
+    lastProposal?: {
+      centralQuestion: string;
+      primaryModes: DesignMode[];
+      rationale: string;
+      suggestedAt: number;
+    };
+    lastSuggestion?: {
+      shouldSuggest: boolean;
+      centralQuestion?: string;
+      primaryModes?: DesignMode[];
+      rationale?: string;
+      suggestedAt: number;
+    };
   };
 }
 

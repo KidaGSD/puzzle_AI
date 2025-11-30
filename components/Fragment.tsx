@@ -13,6 +13,8 @@ interface FragmentProps {
   summary?: string;
   tags?: string[];
   onDelete?: (id: string) => void;
+  labels?: string[];
+  labelColors?: Record<string, string>;
 }
 
 export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
@@ -25,7 +27,9 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   leverColor,
   summary,
   tags,
-  onDelete
+  onDelete,
+  labels,
+  labelColors
 }, ref) => {
   const [localContent, setLocalContent] = useState(data.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -148,6 +152,19 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                 {tags.slice(0, 4).map(tag => (
                   <span key={tag} className="px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-semibold text-gray-600">
                     {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {labels && labels.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {labels.map(l => (
+                  <span
+                    key={l}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                    style={{ backgroundColor: labelColors?.[l] || '#9B8DBF' }}
+                  >
+                    Puzzle {l}
                   </span>
                 ))}
               </div>

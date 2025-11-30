@@ -77,6 +77,9 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         client,
       );
       console.info("[mascot:self]", proposal);
+      store.setState(draft => {
+        draft.agentState.mascot.lastProposal = { ...proposal, suggestedAt: Date.now() };
+      });
       // TODO: hand off to Puzzle Designer Agent to create actual puzzle/session.
     } else if (payload.action === "suggest_puzzle") {
       const suggestion = await runMascotSuggest(
@@ -89,6 +92,9 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         client,
       );
       console.info("[mascot:suggest]", suggestion);
+      store.setState(draft => {
+        draft.agentState.mascot.lastSuggestion = { ...suggestion, suggestedAt: Date.now() };
+      });
     }
   };
 
@@ -181,6 +187,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         handleQuadrantPiece(event);
         break;
       default:
+        console.debug("[orchestrator] unhandled event", event.type);
         break;
     }
   });

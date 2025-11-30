@@ -30,7 +30,7 @@ export interface ContextStore {
   upsertFragment(fragment: Fragment): ProjectStore;
   deleteFragment(fragmentId: UUID): ProjectStore;
   upsertCluster(cluster: Cluster): ProjectStore;
-  addPuzzle(puzzle: Puzzle): ProjectStore;
+  upsertPuzzle(puzzle: Puzzle): ProjectStore;
   addAnchor(anchor: Anchor): ProjectStore;
   upsertPuzzlePiece(piece: PuzzlePiece): ProjectStore;
   setPieceStatus(pieceId: UUID, status: PieceStatus): ProjectStore;
@@ -88,6 +88,8 @@ export const createContextStore = (
     updater(draft);
     state = draft;
     subscribers.forEach(fn => fn());
+    // Fire and forget persist
+    void persist();
     return state;
   };
 
@@ -154,9 +156,14 @@ export const createContextStore = (
       }
     });
 
-  const addPuzzle = (puzzle: Puzzle) =>
+  const upsertPuzzle = (puzzle: Puzzle) =>
     setState(draft => {
-      draft.puzzles.push(puzzle);
+      const idx = draft.puzzles.findIndex(p => p.id === puzzle.id);
+      if (idx >= 0) {
+        draft.puzzles[idx] = puzzle;
+      } else {
+        draft.puzzles.push(puzzle);
+      }
     });
 
   const addAnchor = (anchor: Anchor) =>
@@ -226,7 +233,7 @@ export const createContextStore = (
     upsertFragment,
     deleteFragment,
     upsertCluster,
-    addPuzzle,
+    upsertPuzzle,
     addAnchor,
     upsertPuzzlePiece,
     setPieceStatus,

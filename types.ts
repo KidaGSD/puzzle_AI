@@ -34,6 +34,7 @@ export interface FragmentData {
   zIndex: number;
   summary?: string;
   tags?: string[];
+  labels?: string[];
 }
 
 export interface Lever {

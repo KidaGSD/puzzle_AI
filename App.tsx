@@ -8,9 +8,10 @@ import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE } from './
 import { analyzeBoard } from './services/geminiService';
 import { Plus } from 'lucide-react';
 import { contextStore, eventBus, ensureOrchestrator } from './store/runtime';
-import { Fragment as DomainFragment, PuzzleSummary } from './domain/models';
-import { attachOrchestratorStub } from './ai/orchestratorStub';
+import { Fragment as DomainFragment, PuzzleSummary, Cluster } from './domain/models';
 import { SummaryCard } from './components/SummaryCard';
+import { ClusterOverlay } from './components/ClusterOverlay';
+import { MascotPanel } from './components/MascotPanel';
 
 // --- MOCK DATA ---
 const INITIAL_LEVERS: Lever[] = [
@@ -58,8 +59,8 @@ const toDomainFragment = (f: FragmentData): DomainFragment => ({
   updatedAt: now(),
 });
 
-  const shallowFragmentEqual = (a: FragmentData, b: FragmentData) => {
-    return (
+const shallowFragmentEqual = (a: FragmentData, b: FragmentData) => {
+  return (
       a.type === b.type &&
       a.content === b.content &&
       a.title === b.title &&
@@ -71,6 +72,24 @@ const toDomainFragment = (f: FragmentData): DomainFragment => ({
     a.zIndex === b.zIndex
   );
 };
+
+const mapDomainTypeToUI = (type: DomainFragment["type"]): FragmentType => {
+  if (type === "IMAGE") return FragmentType.IMAGE;
+  if (type === "LINK") return FragmentType.LINK;
+  if (type === "OTHER") return FragmentType.FRAME;
+  return FragmentType.TEXT;
+};
+
+const toUIFragment = (f: DomainFragment): FragmentData => ({
+  id: f.id,
+  type: mapDomainTypeToUI(f.type),
+  position: f.position,
+  size: f.size || { width: 200, height: 120 },
+  content: f.content,
+  zIndex: f.zIndex || 1,
+  summary: f.summary,
+  tags: f.tags,
+});
 
 // --- APP COMPONENT ---
 export default function App() {
@@ -88,11 +107,12 @@ export default function App() {
   const [levers, setLevers] = useState<Lever[]>(INITIAL_LEVERS);
   const [puzzles, setPuzzles] = useState<Puzzle[]>(INITIAL_PUZZLES);
   const [activeLeverId, setActiveLeverId] = useState<string | null>(null);
-  const [projectTitle] = useState(contextStore.getState().project.title);
+  const [projectTitle, setProjectTitle] = useState(contextStore.getState().project.title);
   const [aim, setAim] = useState(contextStore.getState().project.processAim);
   const [puzzleSummaries, setPuzzleSummaries] = useState(contextStore.getState().puzzleSummaries);
   const [showDebug, setShowDebug] = useState(true);
   const [storeFragments, setStoreFragments] = useState(contextStore.getState().fragments);
+  const [storeClusters, setStoreClusters] = useState<Cluster[]>(contextStore.getState().clusters);
 
   // Interaction State
   const [interactionMode, setInteractionMode] = useState<'IDLE' | 'DRAG_CANVAS' | 'DRAG_FRAGMENT' | 'RESIZE_FRAGMENT'>('IDLE');
@@ -136,7 +156,30 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selection]);
 
-  // Attach orchestrator stub once
+  // Hydrate store from adapter
+  useEffect(() => {
+    contextStore.hydrate().then((state) => {
+      setProjectTitle(state.project.title);
+      setAim(state.project.processAim);
+      // Replace initial seeds only if store already has data
+      if (state.fragments.length > 0) {
+        setFragments(prev => prev.length ? prev : state.fragments.map(toUIFragment));
+      }
+      if (state.puzzles.length > 0) {
+        setPuzzles(prev => prev.length ? prev : state.puzzles.map(p => ({
+          id: p.id,
+          leverId: 'L1',
+          title: p.centralQuestion,
+          type: 'clarify',
+          description: '',
+        })));
+      }
+      setPuzzleSummaries(state.puzzleSummaries);
+      setStoreFragments(state.fragments);
+    });
+  }, []);
+
+  // Attach orchestrator once
   useEffect(() => {
     if (detachOrchestratorRef.current) return;
     detachOrchestratorRef.current = ensureOrchestrator();
@@ -151,9 +194,11 @@ export default function App() {
       const state = contextStore.getState();
       setStoreFragments(state.fragments);
       setPuzzleSummaries(state.puzzleSummaries);
+      setStoreClusters(state.clusters);
       console.debug("[app] store updated", {
         fragments: state.fragments.length,
-        summaries: state.puzzleSummaries.length
+        summaries: state.puzzleSummaries.length,
+        clusters: state.clusters.length
       });
     });
     return () => unsub();
@@ -202,10 +247,10 @@ export default function App() {
         createdAt: now(),
       };
       if (!prev) {
-        contextStore.addPuzzle(domainPuzzle);
+        contextStore.upsertPuzzle(domainPuzzle);
         eventBus.emitType("PUZZLE_CREATED", { puzzleId: p.id });
       } else {
-        contextStore.addPuzzle(domainPuzzle);
+        contextStore.upsertPuzzle(domainPuzzle);
         eventBus.emitType("PUZZLE_UPDATED", { puzzleId: p.id });
       }
       prevMap.delete(p.id);
@@ -456,21 +501,6 @@ export default function App() {
     setFragments(prev => prev.map(f => f.id === id ? { ...f, content } : f));
   };
 
-  const handleMockFinishPuzzle = () => {
-    if (!puzzles.length) return;
-    const target = puzzles[0];
-    console.log("[mock] finish puzzle", target.id);
-    eventBus.emitType("PUZZLE_FINISH_CLICKED", {
-      puzzleId: target.id,
-      centralQuestion: target.title,
-      anchors: [
-        { type: "STARTING", text: "Analog warmth as emotional hook" },
-        { type: "SOLUTION", text: "Calm motion to match retro tone" }
-      ],
-      pieces: [],
-      fragmentIds: fragments.slice(0, 2).map(f => f.id)
-    });
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -579,25 +609,38 @@ export default function App() {
           }}
           className="relative w-full h-full"
         >
-          {fragments.map(fragment => (
-          <Fragment
-            key={fragment.id}
-            ref={(el) => {
-              if (el) fragmentRefs.current.set(fragment.id, el);
-              else fragmentRefs.current.delete(fragment.id);
-            }}
-            data={fragment}
-            scale={scale}
-            isSelected={selection === fragment.id}
-            onMouseDown={handleFragmentMouseDown}
-            onResizeStart={handleResizeStart}
-            onUpdate={handleUpdateFragment}
-            leverColor={levers.find(l => l.id === fragment.leverId)?.color}
-            summary={storeFragments.find(sf => sf.id === fragment.id)?.summary}
-            tags={storeFragments.find(sf => sf.id === fragment.id)?.tags}
-            onDelete={(id) => setFragments(prev => prev.filter(f => f.id !== id))}
-          />
-        ))}
+          {/* Cluster Overlay */}
+          <ClusterOverlay clusters={storeClusters} fragments={fragments} />
+
+          {fragments.map(fragment => {
+            const storeFrag = storeFragments.find(sf => sf.id === fragment.id);
+            const puzzleColorMap = puzzles.reduce<Record<string, string>>((acc, p) => {
+              const color = levers.find(l => l.id === p.leverId)?.color;
+              if (color) acc[p.id] = color;
+              return acc;
+            }, {});
+            return (
+              <Fragment
+                key={fragment.id}
+                ref={(el) => {
+                  if (el) fragmentRefs.current.set(fragment.id, el);
+                  else fragmentRefs.current.delete(fragment.id);
+                }}
+                data={fragment}
+                scale={scale}
+                isSelected={selection === fragment.id}
+                onMouseDown={handleFragmentMouseDown}
+                onResizeStart={handleResizeStart}
+                onUpdate={handleUpdateFragment}
+                leverColor={levers.find(l => l.id === fragment.leverId)?.color}
+                summary={storeFrag?.summary}
+                tags={storeFrag?.tags}
+                labels={storeFrag?.labels}
+                labelColors={puzzleColorMap}
+                onDelete={(id) => setFragments(prev => prev.filter(f => f.id !== id))}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -609,6 +652,9 @@ export default function App() {
         puzzleSummaries={puzzleSummaries}
         onSelectPuzzle={(p) => console.log("Selected puzzle", p.title)}
       />
+
+      {/* Mascot Panel */}
+      <MascotPanel />
 
       {/* Puzzle Summary Cards (placeholder, stacked) */}
       {puzzleSummaries.length > 0 && (
@@ -622,16 +668,6 @@ export default function App() {
       {/* Hint for Controls */}
       <div className="absolute bottom-4 right-4 z-40 text-[#A09C94] text-xs font-mono bg-[#F5F1E8]/80 p-2 rounded pointer-events-none">
         Middle Click / Space+Drag to Pan • Scroll to Zoom
-      </div>
-
-      {/* Mock finish puzzle button */}
-      <div className="absolute bottom-4 left-4 z-40">
-        <button
-          onClick={handleMockFinishPuzzle}
-          className="px-3 py-2 bg-[#262626] text-white text-xs rounded-lg shadow hover:bg-black transition"
-        >
-          Mock Finish First Puzzle
-        </button>
       </div>
 
       {/* Debug Overlay - Toggle with backtick (`) key */}

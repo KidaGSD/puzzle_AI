@@ -8,16 +8,17 @@
   - `TopBar.tsx`：项目标题 + Process Aim 输入（待接 store）。
   - `Toolbar.tsx`：指针/文本/图片/框选工具 + Ask Agent 按钮（待接 mascot/orchestrator）。
   - `Fragment.tsx`：文本/图片/链接/Frame 卡片，拖拽/缩放，显示 leverColor（未来显示标签/summary/tag）。
-  - `PuzzleDeck.tsx`：应展示所有 puzzle（user/AI 创建），未完成的仍可从 deck 进入，完成的会有 summary 标记但不会被移除（对应 SystemDoc §2.4 流程）。
-  - （计划）`MascotPanel.tsx`：Guide/Puzzle Launcher/Reflection 入口。
-  - （计划）`SummaryCard.tsx`：Puzzle Summary card，落在 Canvas 上并链接 fragments。
-  - （计划）`ClusterOverlay.tsx`：clusters 可视化（轻描边/背景块）。
+  - `PuzzleDeck.tsx`：展示所有 puzzle（user/AI 创建），未完成的仍可从 deck 进入；完成的标记 Finished，可点击 Finish 触发 PUZZLE_FINISH。
+  - `MascotPanel.tsx`：Guide/Puzzle Launcher UI（start from my question / suggest puzzle），展示 orchestrator 输出。
+  - `SummaryCard.tsx`：Puzzle Summary card，落在 Canvas 上并链接 fragments。
+  - `ClusterOverlay.tsx`：clusters 可视化（轻描边/背景块）。
 - `domain/`
   - `models.ts`：数据模型与枚举（ProjectStore, Fragment, Cluster, Puzzle, Anchor, PuzzlePiece, PuzzleSummary, UIEvent, PieceEvent, PreferenceProfile 等）。
 - `store/`
   - `contextStore.ts`：ProjectStore 读写器，含 undo/redo 栈、StorageAdapter hook、CRUD helper（processAim、fragment/cluster/puzzle/piece/summary、labelFragments、preferenceProfile）。
   - `eventBus.ts`：UIEvent 事件总线（emit/subscribe），供 orchestrator 监听。
   - `preferenceProfile.ts`：PieceEvent 聚合 → UserPreferenceProfile，生成 preference hints。
+  - `adapters/localStorageAdapter.ts`：StorageAdapter 实现，落地 persist/hydrate。
   - （计划）`adapters/indexedDbAdapter.ts`：StorageAdapter 实现，落地 persist/hydrate。
 - `ai/`（计划）
   - `orchestrator.ts`：订阅 eventBus，裁剪 context，调用 agents（FragmentContext/Mascot/PuzzleDesigner/QuadrantPiece），写回 contextStore，使用 ADK 客户端；现已接入。

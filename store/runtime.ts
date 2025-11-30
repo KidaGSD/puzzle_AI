@@ -3,6 +3,7 @@ import { createContextStore, createEmptyProjectStore } from "./contextStore";
 import { createEventBus } from "./eventBus";
 import { attachOrchestrator } from "../ai/orchestrator";
 import { attachOrchestratorStub } from "../ai/orchestratorStub";
+import { createLocalStorageAdapter } from "./adapters/localStorageAdapter";
 
 const defaultProject: Project = {
   id: "demo-project",
@@ -10,7 +11,9 @@ const defaultProject: Project = {
   processAim: "Explore the tension between analog warmth and digital coldness.",
 };
 
-export const contextStore = createContextStore(createEmptyProjectStore(defaultProject));
+const adapter = typeof window !== "undefined" ? createLocalStorageAdapter() : undefined;
+
+export const contextStore = createContextStore(createEmptyProjectStore(defaultProject), adapter);
 
 export const eventBus = createEventBus();
 
