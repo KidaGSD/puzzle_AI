@@ -1,9 +1,9 @@
 
 import React, { useRef, useState } from 'react';
 import { motion, useAnimation } from 'framer-motion';
-import { Piece } from '../types';
-import { CELL_SIZE } from '../constants';
-import { useGameStore } from '../store';
+import { Piece } from '../../types';
+import { CELL_SIZE } from '../../constants/puzzleGrid';
+import { useGameStore } from '../../store/puzzleSessionStore';
 import clsx from 'clsx';
 
 interface PuzzlePieceProps {

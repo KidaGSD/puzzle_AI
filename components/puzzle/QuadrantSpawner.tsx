@@ -2,9 +2,9 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus } from 'lucide-react';
-import { CELL_SIZE, ALL_SHAPES } from '../constants';
-import { QuadrantType, Position } from '../types';
-import { useGameStore } from '../store';
+import { CELL_SIZE, ALL_SHAPES } from '../../constants/puzzleGrid';
+import { QuadrantType, Position } from '../../types';
+import { useGameStore } from '../../store/puzzleSessionStore';
 import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 
@@ -198,7 +198,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                                 width: CELL_SIZE - 0.5,
                                                 height: CELL_SIZE - 0.5,
                                                 background: isValid
-                                                    ? `linear-gradient(135deg, ${color}E6, ${color}80)`
+                                                    ? `linear-gradient(135deg, ${color}FF, ${color}CC)`
                                                     : undefined,
                                                 left: cell.x * CELL_SIZE,
                                                 top: cell.y * CELL_SIZE,

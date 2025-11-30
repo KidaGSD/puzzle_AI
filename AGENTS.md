@@ -53,7 +53,7 @@ Guidelines for coding agents working on the Puzzle app and its AI systems.
 
 - 将 AI 视为一个**独立 subsystem**：
   - `ai/` 中定义清晰的调用流程：输入（context, user answers, board state）→ prompt 构造 → 模型调用 → 输出解析。
-  - 每条 AI 流程，都有对应的 Go 函数和数据结构，而不是散落在 handlers。
+  - 每条 AI 流程，都有对应的函数和数据结构，而不是散落在 handlers。
 - **Prompt as code + docs**：
   - 核心 prompt 写在可版本化的位置（例如 `ai/prompts/*.tmpl`），并在代码中引用。
   - 在 `docs/AI-FLOWS.md` 中记录：
@@ -82,7 +82,6 @@ Guidelines for coding agents working on the Puzzle app and its AI systems.
 
 ## 7. Key Guidelines (Short)
 
-1. **Go idiomatic**：遵循 Go best practices 和标准库优先原则。
 2. **Architecture-first**：先定模块边界和接口，再写实现。任何「临时写法」都要尽快被纳入正式结构。
 3. **Test critical paths**：为核心逻辑（puzzle session state, AI pipeline）写 table-driven tests。
 4. **Document decisions**：复杂逻辑、重要设计决策和 AI 行为，要在 `docs/` 有简洁说明，方便后续 agent 理解和扩展。

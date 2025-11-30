@@ -1,5 +1,5 @@
 import React from 'react';
-import { CELL_SIZE } from '../constants';
+import { CELL_SIZE } from '../../constants/puzzleGrid';
 
 export const GridBackground: React.FC = () => {
   return (

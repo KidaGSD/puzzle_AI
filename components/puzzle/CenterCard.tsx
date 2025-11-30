@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { CELL_SIZE, CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH, COLORS } from '../constants';
+import { CELL_SIZE, CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH, COLORS } from '../../constants/puzzleGrid';
 
 interface CenterCardProps {
   centralQuestion?: string;

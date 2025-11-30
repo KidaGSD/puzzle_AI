@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
-import { CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH } from './constants';
-import { Piece, Position } from './types';
+import { CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH } from '../constants/puzzleGrid';
+import { Piece, Position } from '../types';
 
 interface GameState {
   pieces: Piece[];
@@ -17,11 +17,11 @@ interface GameState {
 const isInsideCenterCard = (x: number, y: number) => {
   const halfW = CENTER_CARD_WIDTH / 2;
   const halfH = CENTER_CARD_HEIGHT / 2;
-  
+
   // Grid coordinates are indices. 
   // For width 2 (half 1): columns -1, 0 are occupied.
   // Range is [-halfW, halfW).
-  
+
   return x >= -halfW && x < halfW && y >= -halfH && y < halfH;
 };
 
@@ -39,7 +39,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   checkCollision: (pieceId, targetPos, cells) => {
     const { pieces } = get();
-    
+
     // Check against center card
     for (const cell of cells) {
       const absX = targetPos.x + cell.x;
@@ -50,15 +50,15 @@ export const useGameStore = create<GameState>((set, get) => ({
     // Check against other pieces
     for (const other of pieces) {
       if (other.id === pieceId) continue;
-      
+
       for (const otherCell of other.cells) {
         const otherAbsX = other.position.x + otherCell.x;
         const otherAbsY = other.position.y + otherCell.y;
 
         for (const myCell of cells) {
-            const myAbsX = targetPos.x + myCell.x;
-            const myAbsY = targetPos.y + myCell.y;
-            if (myAbsX === otherAbsX && myAbsY === otherAbsY) return true;
+          const myAbsX = targetPos.x + myCell.x;
+          const myAbsY = targetPos.y + myCell.y;
+          if (myAbsX === otherAbsX && myAbsY === otherAbsY) return true;
         }
       }
     }
@@ -68,7 +68,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   checkConnection: (targetPos, cells) => {
     const { pieces } = get();
-    
+
     // Directions to check: Up, Down, Left, Right
     const directions = [
       { x: 0, y: -1 },
@@ -97,14 +97,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           // We need to be careful not to connect to 'self's old position' if we are moving.
           // For now, simpler approach: The loop below checks collision against specific cells.
           // We need to verify if neighbor cell belongs to another piece.
-          
-           for (const otherCell of other.cells) {
-             const otherAbsX = other.position.x + otherCell.x;
-             const otherAbsY = other.position.y + otherCell.y;
-             if (otherAbsX === neighborX && otherAbsY === neighborY) {
-               return true;
-             }
-           }
+
+          for (const otherCell of other.cells) {
+            const otherAbsX = other.position.x + otherCell.x;
+            const otherAbsY = other.position.y + otherCell.y;
+            if (otherAbsX === neighborX && otherAbsY === neighborY) {
+              return true;
+            }
+          }
         }
       }
     }
@@ -121,29 +121,29 @@ export const useGameStore = create<GameState>((set, get) => ({
     // we must ensure we don't count the piece itself at its old position as a valid connection point.
     // However, `checkConnection` iterates over `state.pieces`.
     // We should filter out `ignorePieceId` inside `checkConnection` ideally, but for now let's patch it:
-    
+
     // Specialized connection check ignoring self
     const isConnected = (() => {
-        const directions = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
-        for (const cell of cells) {
-            const myAbsX = targetPos.x + cell.x;
-            const myAbsY = targetPos.y + cell.y;
-            for (const dir of directions) {
-                const nx = myAbsX + dir.x;
-                const ny = myAbsY + dir.y;
-                if (isInsideCenterCard(nx, ny)) return true;
-                
-                for (const other of state.pieces) {
-                    if (other.id === ignorePieceId) continue;
-                    for (const oc of other.cells) {
-                        const ox = other.position.x + oc.x;
-                        const oy = other.position.y + oc.y;
-                        if (ox === nx && oy === ny) return true;
-                    }
-                }
+      const directions = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
+      for (const cell of cells) {
+        const myAbsX = targetPos.x + cell.x;
+        const myAbsY = targetPos.y + cell.y;
+        for (const dir of directions) {
+          const nx = myAbsX + dir.x;
+          const ny = myAbsY + dir.y;
+          if (isInsideCenterCard(nx, ny)) return true;
+
+          for (const other of state.pieces) {
+            if (other.id === ignorePieceId) continue;
+            for (const oc of other.cells) {
+              const ox = other.position.x + oc.x;
+              const oy = other.position.y + oc.y;
+              if (ox === nx && oy === ny) return true;
             }
+          }
         }
-        return false;
+      }
+      return false;
     })();
 
     return isConnected;

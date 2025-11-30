@@ -3,9 +3,9 @@ import React from 'react';
 import { GridBackground } from './GridBackground';
 import { CenterCard } from './CenterCard';
 import { PuzzlePiece } from './PuzzlePiece';
-import { useGameStore } from '../store';
+import { useGameStore } from '../../store/puzzleSessionStore';
 import { QuadrantSpawner } from './QuadrantSpawner';
-import { COLORS } from '../constants';
+import { COLORS } from '../../constants/puzzleGrid';
 import { Mascot } from './Mascot';
 import { Puzzle } from '../../domain/models';
 
