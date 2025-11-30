@@ -11,7 +11,6 @@ import { TopBar } from '../components/TopBar';
 import { PuzzleDeck } from '../components/PuzzleDeck';
 import { Fragment } from '../components/Fragment';
 import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE } from '../types';
-import { analyzeBoard } from '../services/geminiService';
 import { contextStore, eventBus, setMascotProposalListener } from '../store/runtime';
 import { Fragment as DomainFragment, PuzzleSummary } from '../domain/models';
 import { SummaryCard } from '../components/SummaryCard';
@@ -21,20 +20,17 @@ import { MascotProposal } from '../ai/agents/mascotAgent';
 import { WelcomeOverlay } from '../components/onboarding/WelcomeOverlay';
 
 // --- MOCK DATA ---
+// Levers (strategic directions) - kept for fragment organization
 const INITIAL_LEVERS: Lever[] = [
   { id: 'L1', name: 'Fiction Becomes Real', color: PALETTE.teal },
   { id: 'L2', name: 'Nostalgic Future', color: PALETTE.orange },
   { id: 'L3', name: 'Human vs Machine', color: PALETTE.purple },
 ];
 
-const INITIAL_PUZZLES: Puzzle[] = [
-  { id: 'P1', leverId: 'L1', title: 'Ground the fantastic in physics', type: 'clarify', description: '...' },
-  { id: 'P2', leverId: 'L1', title: 'Exaggerate the scale of technology', type: 'expand', description: '...' },
-  { id: 'P3', leverId: 'L2', title: 'Use 80s interface aesthetics', type: 'converge', description: '...' },
-  { id: 'P4', leverId: 'L2', title: 'Warm analog color grading', type: 'clarify', description: '...' },
-  { id: 'P5', leverId: 'L3', title: 'Show the error in the system', type: 'expand', description: '...' },
-];
+// No mock puzzles - puzzles are created through Mascot AI interaction
+const INITIAL_PUZZLES: Puzzle[] = [];
 
+// Mock fragments for testing - kept for development speed
 const INITIAL_FRAGMENTS: FragmentData[] = [
   { id: 'f1', type: FragmentType.TEXT, position: { x: 100, y: 100 }, size: { width: 220, height: 100 }, content: "Design should feel like an artifact from an alternate 1985.", leverId: 'L2', zIndex: 1 },
   { id: 'f2', type: FragmentType.IMAGE, position: { x: 400, y: 150 }, size: { width: 200, height: 180 }, content: "https://picsum.photos/400/300", title: "Retro Console", leverId: 'L2', zIndex: 2 },
@@ -508,39 +504,6 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // --- GEMINI INTEGRATION ---
-  const handleAgentTrigger = async () => {
-    console.log("Asking Agent...");
-    const resultJson = await analyzeBoard(fragments, aim);
-
-    try {
-      const cleanedJson = resultJson.replace(/```json|```/g, '').trim();
-      const result = JSON.parse(cleanedJson);
-
-      if (result.name) {
-        const newLever: Lever = {
-          id: `L${Date.now()}`,
-          name: result.name,
-          color: PALETTE.pink
-        };
-        setLevers(prev => [...prev, newLever]);
-
-        const newPuzzle: Puzzle = {
-          id: `P${Date.now()}`,
-          leverId: newLever.id,
-          title: `Explore ${result.name}`,
-          description: result.reason,
-          type: 'expand'
-        };
-        setPuzzles(prev => [newPuzzle, ...prev]);
-
-        alert(`Agent found a new direction: "${result.name}"`);
-      }
-    } catch (e) {
-      console.log("Raw agent response:", resultJson);
-    }
-  };
-
   // --- RENDER ---
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#F5F1E8] text-[#262626] flex flex-col relative select-none">
@@ -569,7 +532,6 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
       <Toolbar
         activeTool={activeTool}
         onSelectTool={setActiveTool}
-        onAgentTrigger={handleAgentTrigger}
       />
 
       {/* Main Canvas Area */}

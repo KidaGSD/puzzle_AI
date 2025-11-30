@@ -1,7 +1,31 @@
 # BUILDING.md - Puzzle AI System Integration Document
 
 **Last Updated**: 2025-11-30
-**Status**: Integration Planning
+**Status**: Phase 1 Complete - View Router & Navigation Implemented
+
+---
+
+## Recent Changes (2025-11-30)
+
+### UI Reorganization
+- **Mascot Button**: Moved from bottom-right to bottom-left (`left-6 bottom-28`), positioned below the Toolbar
+- **MascotPanel**: Repositioned to open on left side (`left-24 bottom-24`) with bubble tail pointing left
+- **Toolbar**: Removed purple sparkle "Ask Agent" button - AI interaction now exclusively through Mascot
+- **Mock Data**: Removed mock puzzles (`INITIAL_PUZZLES = []`), retained mock fragments for testing
+
+### File Structure
+- Created `views/HomeCanvasView.tsx` - Extracted from App.tsx
+- Created `views/PuzzleSessionView.tsx` - Integrated puzzle session view
+- Created `components/common/LoadingTransition.tsx` - "Entering your puzzle..." transition
+- Updated `App.tsx` - Now acts as view router with state machine ('canvas' | 'puzzle')
+
+### AI Integration Flow (Verified Working)
+```
+MascotPanel → eventBus.emitType('MASCOT_CLICKED') → orchestrator
+    → mascotAgent → adkClient (Gemini) → proposal callback
+    → HomeCanvasView displays proposal → User clicks "Start Puzzle"
+    → Creates Puzzle → Navigates to PuzzleSessionView
+```
 
 ---
 
@@ -639,14 +663,17 @@ const indexedDBAdapter: StorageAdapter = {
 
 ## 9. Implementation Phases
 
-### Phase 1: View Router & Navigation (2-3 hours)
-1. Create `views/` folder with HomeCanvasView and PuzzleSessionView
-2. Refactor App.tsx to be view router
-3. Add LoadingTransition component
-4. Wire PuzzleDeck click → enter puzzle
-5. Wire End Puzzle button → exit to canvas
+### Phase 1: View Router & Navigation ✅ COMPLETE
+1. ✅ Created `views/` folder with HomeCanvasView and PuzzleSessionView
+2. ✅ Refactored App.tsx to be view router
+3. ✅ Added LoadingTransition component
+4. ✅ Wired PuzzleDeck click → enter puzzle
+5. ✅ Wired End Puzzle button → exit to canvas
+6. ✅ Moved Mascot to left side (single AI entry point)
+7. ✅ Removed sparkle button from Toolbar
+8. ✅ Removed mock puzzles (kept mock fragments)
 
-### Phase 2: Puzzle Session Integration (3-4 hours)
+### Phase 2: Puzzle Session Integration (3-4 hours) ← NEXT
 1. Move puzzle_session components to `components/puzzle/`
 2. Update imports and paths
 3. Pass puzzle data to CenterCard
@@ -671,11 +698,20 @@ const indexedDBAdapter: StorageAdapter = {
 ## 10. Testing Checklist
 
 ### Navigation Flow
-- [ ] Click puzzle card → Loading animation → Puzzle session view
-- [ ] Click "End Puzzle" → Summary generated → Return to canvas
+- [x] Click puzzle card → Loading animation → Puzzle session view
+- [x] Click "End Puzzle" → Summary generated → Return to canvas
 - [ ] Summary card appears near fragments
 - [ ] Fragment labels show puzzle badge
 - [ ] Puzzle deck card shows "Finished" checkmark
+
+### Mascot Flow (Phase 1)
+- [x] Mascot button visible on left side (below toolbar)
+- [x] Click mascot → MascotPanel opens on left side
+- [x] "Suggest a Puzzle" triggers AI proposal generation
+- [x] "I have a question" mode works
+- [x] Click outside panel closes it
+- [x] Proposal displayed → "Start Puzzle" creates puzzle
+- [x] Build passes with no TypeScript errors
 
 ### Puzzle Session
 - [ ] Central question displays correctly
@@ -727,5 +763,6 @@ import { PuzzleBoard } from '@/components/puzzle/PuzzleBoard';
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Prepared for**: Puzzle Session Integration Sprint
+**Phase 1 Completed**: 2025-11-30

@@ -5,8 +5,8 @@ interface MascotButtonProps {
 }
 
 /**
- * Floating mascot button that sits in the bottom-right corner of the canvas.
- * Clicking it opens the MascotPanel where users can start puzzles.
+ * Floating mascot button positioned on the left side below the toolbar.
+ * Acts as the single AI entry point for starting puzzles and getting suggestions.
  */
 export function MascotButton({ onClick }: MascotButtonProps) {
   const [showBubble, setShowBubble] = useState(false);
@@ -23,18 +23,20 @@ export function MascotButton({ onClick }: MascotButtonProps) {
   }, []);
 
   return (
-    <div className="fixed right-6 bottom-6 z-[1000] flex flex-col items-end pointer-events-none">
-      {/* Conversational Bubble */}
+    <div className="fixed left-6 bottom-28 z-[1000] flex flex-col items-start pointer-events-none">
+      {/* Conversational Bubble - positioned to the right of mascot */}
       <div
         className={`
-          mb-3 mr-2 bg-white px-4 py-3 rounded-2xl rounded-br-none shadow-lg 
-          border border-purple-100 max-w-[200px] transform transition-all duration-300 origin-bottom-right
-          ${showBubble ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-90 translate-y-2 pointer-events-none'}
+          absolute left-full ml-3 bottom-0 bg-white px-4 py-3 rounded-2xl rounded-bl-none shadow-lg
+          border border-purple-100 max-w-[200px] transform transition-all duration-300 origin-bottom-left
+          ${showBubble ? 'opacity-100 scale-100 translate-x-0' : 'opacity-0 scale-90 -translate-x-2 pointer-events-none'}
         `}
       >
         <p className="text-sm text-gray-700 font-medium leading-relaxed">
           Stuck? Click me to start a thinking puzzle!
         </p>
+        {/* Arrow pointing left */}
+        <span className="absolute left-0 bottom-4 -translate-x-full border-8 border-transparent border-r-white"></span>
       </div>
 
       {/* Mascot Button */}
@@ -51,7 +53,7 @@ export function MascotButton({ onClick }: MascotButtonProps) {
         <img
           src="/mascot-design.svg"
           alt="Mascot"
-          className="w-16 h-16 object-contain drop-shadow-md transform transition-transform duration-300 group-hover:scale-110 group-active:scale-95 animate-float"
+          className="w-14 h-14 object-contain drop-shadow-md transform transition-transform duration-300 group-hover:scale-110 group-active:scale-95 animate-float"
         />
       </button>
 

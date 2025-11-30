@@ -85,7 +85,7 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.95 }}
           transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-          className="fixed right-24 bottom-8 z-[999] w-[380px] max-w-[calc(100vw-32px)]"
+          className="fixed left-24 bottom-28 z-[999] w-[380px] max-w-[calc(100vw-32px)]"
         >
           <div className="relative bg-white/80 backdrop-blur-xl border border-white/50 shadow-2xl rounded-2xl overflow-hidden flex flex-col">
 
@@ -243,8 +243,8 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
             </div>
           </div>
 
-          {/* Bubble Tail */}
-          <div className="absolute -bottom-2 right-8 w-4 h-4 bg-white/80 backdrop-blur-xl border-r border-b border-white/50 transform rotate-45"></div>
+          {/* Bubble Tail - points to mascot on left */}
+          <div className="absolute bottom-8 -left-2 w-4 h-4 bg-white/80 backdrop-blur-xl border-l border-b border-white/50 transform rotate-45"></div>
         </motion.div>
       )}
     </AnimatePresence>

@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Board } from '../puzzle_session/components/Board';
+import { Board } from '../components/puzzle/Board';
 import { contextStore } from '../store/runtime';
 import { Puzzle as DomainPuzzle } from '../domain/models';
 

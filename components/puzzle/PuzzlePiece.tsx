@@ -37,11 +37,10 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
 
   // Opacity Logic: 
   // Center (dist ~1-2) -> 1.0
-  // Edge (dist ~6-7) -> Fades out significantly
-  // We want a smooth gradient where pieces further away are more transparent
-  // Formula: Sigmoid-like falloff or simple linear with lower floor
+  // Edge (dist ~6-7) -> 0.85 (Still very visible)
   const maxDist = 8;
-  const opacityFactor = Math.max(0.15, 1 - Math.pow(distance / maxDist, 1.5));
+  // Much gentler falloff
+  const opacityFactor = Math.max(0.85, 1 - (distance / maxDist) * 0.3);
   const baseOpacity = Math.min(1, opacityFactor);
 
   const handleDragStart = () => {
@@ -107,29 +106,30 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
         <div
           key={idx}
           className={clsx(
-            "absolute rounded-lg shadow-sm transition-all duration-200 backdrop-blur-md",
-            isDragging && "shadow-xl ring-2",
-            isDragging && isValidPos && "ring-white/60",
-            isDragging && !isValidPos && "ring-red-400 bg-red-500/80 z-50",
+            "absolute transition-all duration-200 backdrop-blur-md",
+            isDragging && "shadow-xl z-50",
+            isDragging && !isValidPos && "bg-red-500/80",
           )}
           style={{
-            left: cell.x * CELL_SIZE + 2,
-            top: cell.y * CELL_SIZE + 2,
-            width: CELL_SIZE - 4,
-            height: CELL_SIZE - 4,
-            opacity: isDragging ? 1 : baseOpacity, // Full opacity when dragging, gradient otherwise
+            left: cell.x * CELL_SIZE,
+            top: cell.y * CELL_SIZE,
+            width: CELL_SIZE - 0.5, // Almost full size for gapless look
+            height: CELL_SIZE - 0.5,
+            opacity: isDragging ? 1 : Math.max(0.9, baseOpacity), // Keep opacity high
             background: isDragging && !isValidPos
               ? undefined
-              : `linear-gradient(135deg, ${data.color}F2, ${data.color}66)`, // More saturated start, transparent end
-            border: isDragging && !isValidPos ? 'none' : '1px solid rgba(255,255,255,0.3)',
-            boxShadow: isDragging ? '0 10px 30px -5px rgba(0,0,0,0.3)' : 'inset 0 1px 0 rgba(255,255,255,0.2)',
+              : `linear-gradient(135deg, ${data.color}FF, ${data.color}CC)`, // Fully opaque start, slightly transparent end
+            border: '1px solid rgba(255,255,255,0.3)',
+            boxShadow: isDragging ? '0 10px 30px -5px rgba(0,0,0,0.3)' : 'inset 0 1px 0 rgba(255,255,255,0.4)',
+            borderRadius: '2px', // Tighter radius for gapless feel
           }}
         >
-          <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-white/30 to-transparent pointer-events-none" />
+          {/* Inner highlight for glass effect */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent pointer-events-none" />
 
           {idx === 0 && data.label && (
             <div className="absolute inset-0 flex items-center justify-center p-1 pointer-events-none overflow-hidden z-10">
-              <span className="text-white font-bold text-[11px] uppercase tracking-wider text-center select-none leading-none drop-shadow-md" style={{ opacity: Math.max(0.6, baseOpacity + 0.2) }}>
+              <span className="text-white font-bold text-[10px] uppercase tracking-wider text-center select-none leading-none drop-shadow-md" style={{ opacity: Math.max(0.8, baseOpacity + 0.2) }}>
                 {data.label}
               </span>
             </div>

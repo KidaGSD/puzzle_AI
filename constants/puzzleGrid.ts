@@ -1,124 +1,60 @@
-/**
- * Puzzle Session Grid Constants
- * Consolidated from puzzle_session/constants.ts
- */
 
-// Grid dimensions
-export const CELL_SIZE = 64; // px per grid cell
+import { QUADRANT_COLORS, SYSTEM_COLORS } from '../constants/colors';
+
+export const CELL_SIZE = 64; // px
 export const GRID_GAP = 0;
 
-// Center card dimensions in grid units (must be even for centering)
-export const CENTER_CARD_WIDTH = 2;  // 2 cells wide
-export const CENTER_CARD_HEIGHT = 2; // 2 cells tall
+export const COLORS = {
+  form: QUADRANT_COLORS.FORM,
+  motion: QUADRANT_COLORS.MOTION,
+  expression: QUADRANT_COLORS.EXPRESSION,
+  function: QUADRANT_COLORS.FUNCTION,
+  darkCard: SYSTEM_COLORS.darkCard,
+  gridDot: SYSTEM_COLORS.gridDot,
+  ghost: 'rgba(0,0,0,0.1)'
+};
 
-// Center card pixel dimensions
-export const CENTER_CARD_PX_WIDTH = CENTER_CARD_WIDTH * CELL_SIZE;
-export const CENTER_CARD_PX_HEIGHT = CENTER_CARD_HEIGHT * CELL_SIZE;
+export const QUADRANTS = {
+  TL: 'Form',
+  TR: 'Motion',
+  BL: 'Expression',
+  BR: 'Function',
+};
 
-/**
- * Tetris-like puzzle piece shapes
- * Each shape is defined as an array of relative cell positions
- * Position {x: 0, y: 0} is the anchor/origin point
- *
- * Reference: Figma/PuzzleStages/PuzzleShapes.png
- */
+// Center card dimensions in grid units (Must be even for perfect centering on grid lines)
+export const CENTER_CARD_WIDTH = 2;
+export const CENTER_CARD_HEIGHT = 2;
+
+// Shapes 1-8 from the reference guide
 export const SHAPES = {
   // 1. Horizontal L (3 wide bottom, 2 high right)
-  SHAPE_L: [
-    { x: 0, y: 1 },
-    { x: 1, y: 1 },
-    { x: 2, y: 1 },
-    { x: 2, y: 0 },
-  ],
+  SHAPE_1: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 0 }],
 
   // 2. Fat T (3 wide bottom, center up)
-  SHAPE_T: [
-    { x: 0, y: 1 },
-    { x: 1, y: 1 },
-    { x: 2, y: 1 },
-    { x: 1, y: 0 },
-  ],
+  SHAPE_2: [{ x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 0 }],
 
   // 3. Square 2x2
-  SHAPE_SQUARE: [
-    { x: 0, y: 0 },
-    { x: 1, y: 0 },
-    { x: 0, y: 1 },
-    { x: 1, y: 1 },
-  ],
+  SHAPE_3: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
 
-  // 4. Horizontal Z
-  SHAPE_Z: [
-    { x: 0, y: 0 },
-    { x: 1, y: 0 },
-    { x: 1, y: 1 },
-    { x: 2, y: 1 },
-  ],
+  // 4. Horizontal Z (Top-left start) -> [{x:0,0}, {x:1,0}, {x:1,1}, {x:2,1}]
+  SHAPE_4: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }],
 
   // 5. Horizontal Bar 3x1
-  SHAPE_BAR_H: [
-    { x: 0, y: 0 },
-    { x: 1, y: 0 },
-    { x: 2, y: 0 },
-  ],
+  SHAPE_5: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }],
 
-  // 6. Vertical Bar 1x2
-  SHAPE_BAR_V: [
-    { x: 0, y: 0 },
-    { x: 0, y: 1 },
-  ],
+  // 6. Vertical Bar 1x2 (Reference looks short)
+  SHAPE_6: [{ x: 0, y: 0 }, { x: 0, y: 1 }],
 
-  // 7. Big Gamma / Gun shape
-  SHAPE_GAMMA: [
-    { x: 0, y: 0 },
-    { x: 1, y: 0 },
-    { x: 0, y: 1 },
-    { x: 0, y: 2 },
-  ],
+  // 7. Big Gamma / Gun (3 tall left, 2 wide top) -> [{0,0},{0,1},{0,2},{1,0}]
+  // Reference image shape 7: 
+  // Row 0: [x, x]
+  // Row 1: [x, _]
+  // Row 2: [x, _] 
+  // Actually looking at image 7: It's 2 wide at top, 3 tall on left.
+  SHAPE_7: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }],
 
-  // 8. Vertical S/Z
-  SHAPE_S: [
-    { x: 1, y: 0 },
-    { x: 1, y: 1 },
-    { x: 0, y: 1 },
-    { x: 0, y: 2 },
-  ],
-} as const;
+  // 8. Vertical S/Z 
+  SHAPE_8: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 2 }],
+};
 
 export const ALL_SHAPES = Object.values(SHAPES);
-
-export type ShapeType = keyof typeof SHAPES;
-export type ShapeCells = (typeof SHAPES)[ShapeType];
-
-/**
- * Get a random shape
- */
-export const getRandomShape = (): readonly { x: number; y: number }[] => {
-  return ALL_SHAPES[Math.floor(Math.random() * ALL_SHAPES.length)];
-};
-
-/**
- * Quadrant positions for spawners
- * Relative to viewport
- */
-export const QUADRANT_POSITIONS = {
-  FORM: { position: 'top-left', className: 'top-1/4 left-12' },
-  MOTION: { position: 'top-right', className: 'top-1/4 right-12' },
-  EXPRESSION: { position: 'bottom-left', className: 'bottom-1/4 left-12' },
-  FUNCTION: { position: 'bottom-right', className: 'bottom-1/4 right-12' },
-} as const;
-
-/**
- * Random labels per quadrant for piece generation
- */
-export const QUADRANT_LABELS = {
-  FORM: ['Solid', 'Light', 'Heavy', 'Soft', 'Round', 'Angular', 'Minimal', 'Dense'],
-  MOTION: ['Fast', 'Slow', 'Glide', 'Pop', 'Flow', 'Bounce', 'Drift', 'Snap'],
-  EXPRESSION: ['Happy', 'Bold', 'Quiet', 'Zen', 'Loud', 'Warm', 'Cool', 'Playful'],
-  FUNCTION: ['Logo', 'Icon', 'Sign', 'Nav', 'Btn', 'Card', 'Hero', 'Footer'],
-} as const;
-
-export const getRandomLabel = (quadrant: keyof typeof QUADRANT_LABELS): string => {
-  const labels = QUADRANT_LABELS[quadrant];
-  return labels[Math.floor(Math.random() * labels.length)];
-};

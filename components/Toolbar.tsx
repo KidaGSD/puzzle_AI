@@ -1,15 +1,17 @@
-
 import React from 'react';
-import { MousePointer2, Type, Image as ImageIcon, BoxSelect, Sparkles } from 'lucide-react';
-import { ToolType, PALETTE } from '../types';
+import { MousePointer2, Type, Image as ImageIcon, BoxSelect } from 'lucide-react';
+import { ToolType } from '../types';
 
 interface ToolbarProps {
   activeTool: ToolType;
   onSelectTool: (tool: ToolType) => void;
-  onAgentTrigger: () => void;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool, onAgentTrigger }) => {
+/**
+ * Left-side toolbar for canvas tools.
+ * AI interaction is now handled by the Mascot button below.
+ */
+export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) => {
   const tools = [
     { id: ToolType.POINTER, icon: MousePointer2, label: 'Select' },
     { id: ToolType.TEXT, icon: Type, label: 'Note' },
@@ -49,23 +51,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool, onAg
           );
         })}
       </div>
-
-      {/* Agent Trigger Separated */}
-      <button
-        onClick={onAgentTrigger}
-        className="
-          bg-gradient-to-br from-[#9B8DBF] to-[#8A7CAE] p-4 rounded-2xl text-white
-          shadow-[0_10px_20px_rgba(155,141,191,0.3)]
-          hover:-translate-y-1 hover:shadow-[0_14px_28px_rgba(155,141,191,0.4)]
-          active:translate-y-0 active:shadow-sm
-          transition-all duration-200 group relative flex items-center justify-center
-        "
-      >
-        <Sparkles size={22} strokeWidth={2.5} className="animate-pulse" />
-        <span className="absolute left-full ml-4 px-3 py-1.5 bg-[#9B8DBF] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl">
-          Ask Agent
-        </span>
-      </button>
     </div>
   );
 };
