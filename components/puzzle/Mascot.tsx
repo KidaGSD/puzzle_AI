@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 
 export const Mascot: React.FC = () => {
   return (
-    <div className="absolute bottom-8 left-8 z-40 flex items-end space-x-4">
+    <div className="absolute bottom-8 left-8 z-40 flex items-center space-x-4">
       <motion.div
         className="relative w-20 h-20 flex-shrink-0"
         animate={{
@@ -31,9 +31,9 @@ export const Mascot: React.FC = () => {
         initial={{ opacity: 0, scale: 0.8, x: -20 }}
         animate={{ opacity: 1, scale: 1, x: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white/90 backdrop-blur-sm text-gray-800 px-5 py-4 rounded-2xl rounded-bl-none shadow-lg border border-purple-100 max-w-xs"
+        className="bg-[#FFB5FA] text-[#1C1C1C] px-4 py-3 rounded-lg shadow-lg border border-[#1C1C1C]/10 max-w-xs"
       >
-        <p className="text-sm font-medium leading-relaxed">
+        <p className="text-sm font-semibold leading-relaxed">
           Looks like you're paused. If something feels stuck, click me for some directions.
         </p>
       </motion.div>

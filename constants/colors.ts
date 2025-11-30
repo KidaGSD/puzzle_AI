@@ -8,31 +8,34 @@
 
 // Quadrant colors - primary (saturated)
 export const QUADRANT_COLORS = {
-  FORM: '#00DE8C',        // Green - How it looks
-  MOTION: '#3544E0',      // Blue - How it moves
+  FORM: '#5E5BFF',        // Blue - How it looks
+  MOTION: '#00DE8C',      // Green - How it moves
   EXPRESSION: '#8E34FE',  // Purple - What it feels like
   FUNCTION: '#FB07AA',    // Pink/Magenta - What it does
 } as const;
 
 // Quadrant colors - full palette (light to dark)
+// Based on ColorPallate.png: Blue=FORM, Green=MOTION, Purple=EXPRESSION, Pink=FUNCTION
 export const QUADRANT_PALETTE = {
   FORM: {
-    100: '#C9F9DF',
-    200: '#87BEF7', // Note: This seems wrong in Figma, using green scale
-    300: '#00A650',
-    400: '#169B2F',
-    500: '#00DE8C',  // Primary
-    600: '#0A6439',
-    700: '#193E18',
+    // Blue palette for FORM (How it looks)
+    100: '#C0E5EB',
+    200: '#87BEF7',
+    300: '#7496E9',
+    400: '#5E5BFF',
+    500: '#5354ED',  // Primary
+    600: '#3544E0',
+    700: '#1244C5',
   },
   MOTION: {
-    100: '#C0E5EB',
-    200: '#7496E9',
-    300: '#5E5BFF',
-    400: '#5354ED',
-    500: '#3544E0',  // Primary
-    600: '#1244C5',
-    700: '#0A2A80',
+    // Green palette for MOTION (How it moves)
+    100: '#C9F9DF',
+    200: '#87E8B5',
+    300: '#00DE8C',
+    400: '#00A650',
+    500: '#169B2F',  // Primary
+    600: '#0A6439',
+    700: '#193E18',
   },
   EXPRESSION: {
     100: '#E0DEF8',

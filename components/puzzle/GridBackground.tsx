@@ -24,11 +24,7 @@ export const GridBackground: React.FC = () => {
         <div className="absolute h-full w-[1px] bg-gray-300"></div>
       </div>
 
-      {/* Quadrant Labels */}
-      <div className="absolute top-8 left-8 text-gray-400 font-bold text-sm tracking-widest uppercase">Form</div>
-      <div className="absolute top-8 right-8 text-gray-400 font-bold text-sm tracking-widest uppercase text-right">Motion</div>
-      <div className="absolute bottom-8 left-8 text-gray-400 font-bold text-sm tracking-widest uppercase">Expression</div>
-      <div className="absolute bottom-8 right-8 text-gray-400 font-bold text-sm tracking-widest uppercase text-right">Function</div>
+      {/* Note: Quadrant labels removed - now displayed inside QuadrantSpawner buttons */}
     </div>
   );
 };

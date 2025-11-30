@@ -1,7 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus } from 'lucide-react';
 import { CELL_SIZE, ALL_SHAPES } from '../../constants/puzzleGrid';
 import { QuadrantType, Position } from '../../types';
 import { useGameStore } from '../../store/puzzleSessionStore';
@@ -154,14 +153,18 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             <div className={`absolute ${className} flex items-center justify-center z-30`}>
                 <div className="relative group" ref={buttonRef}>
                     <div
-                        className="w-16 h-16 rounded-xl shadow-md flex items-center justify-center bg-white border-2 transition-all duration-200"
-                        style={{ borderColor: color, opacity: isDragging ? 0.3 : 1 }}
+                        className="w-24 h-10 rounded-xl shadow-md flex items-center justify-center px-3 transition-all duration-200"
+                        style={{
+                            backgroundColor: color,
+                            boxShadow: isDragging
+                                ? '0 0 0 2px rgba(255,255,255,0.6), 0 10px 25px rgba(0,0,0,0.35)'
+                                : '0 0 0 1px rgba(17,24,39,0.06), 0 8px 20px rgba(0,0,0,0.25)',
+                            transform: isDragging ? 'translateY(2px) scale(0.98)' : 'translateY(0) scale(1)',
+                        }}
                     >
-                        <Plus size={24} color={color} strokeWidth={3} />
-                    </div>
-
-                    <div className="absolute top-full mt-2 w-max left-1/2 -translate-x-1/2 bg-white/90 px-2 py-1 rounded text-[10px] font-bold text-gray-400 uppercase tracking-widest pointer-events-none select-none">
-                        {label}
+                        <span className="text-[11px] font-bold tracking-wider text-white uppercase">
+                            {label}
+                        </span>
                     </div>
 
                     <motion.div

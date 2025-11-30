@@ -21,8 +21,8 @@ export const QUADRANTS = {
   BR: 'Function',
 };
 
-// Center card dimensions in grid units (Must be even for perfect centering on grid lines)
-export const CENTER_CARD_WIDTH = 2;
+// Center card dimensions in grid units (MUST be even for perfect grid alignment)
+export const CENTER_CARD_WIDTH = 4;
 export const CENTER_CARD_HEIGHT = 2;
 
 // Shapes 1-8 from the reference guide

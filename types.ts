@@ -69,6 +69,8 @@ export const PALETTE = {
 };
 
 export type QuadrantType = 'form' | 'motion' | 'expression' | 'function';
+export type PieceCategoryType = 'clarify' | 'expand' | 'refine';
+export type PieceSourceType = 'user' | 'ai' | 'ai_edited';
 
 export interface Piece {
   id: string;
@@ -77,6 +79,8 @@ export interface Piece {
   position: Position; // Grid coordinates
   cells: Position[]; // Relative coordinates of cells occupying the piece
   label?: string;
+  category?: PieceCategoryType; // CLARIFY, EXPAND, or REFINE
+  source?: PieceSourceType; // USER, AI, or AI_SUGGESTED_USER_EDITED
 }
 
 export interface DragItem {

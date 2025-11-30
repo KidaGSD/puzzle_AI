@@ -27,16 +27,16 @@ export function MascotButton({ onClick }: MascotButtonProps) {
       {/* Conversational Bubble - positioned to the right of mascot */}
       <div
         className={`
-          absolute left-full ml-3 bottom-0 bg-white px-4 py-3 rounded-2xl rounded-bl-none shadow-lg
-          border border-purple-100 max-w-[200px] transform transition-all duration-300 origin-bottom-left
+          absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-[#FFB5FA] px-4 py-3 rounded-lg shadow-lg
+          border border-[#1C1C1C]/10 max-w-[200px] transform transition-all duration-300 origin-left
           ${showBubble ? 'opacity-100 scale-100 translate-x-0' : 'opacity-0 scale-90 -translate-x-2 pointer-events-none'}
         `}
       >
-        <p className="text-sm text-gray-700 font-medium leading-relaxed">
+        <p className="text-sm text-[#1C1C1C] font-semibold leading-relaxed">
           Stuck? Click me to start a thinking puzzle!
         </p>
         {/* Arrow pointing left */}
-        <span className="absolute left-0 bottom-4 -translate-x-full border-8 border-transparent border-r-white"></span>
+        <span className="absolute left-0 bottom-4 -translate-x-full border-8 border-transparent border-r-[#FFB5FA]"></span>
       </div>
 
       {/* Mascot Button */}

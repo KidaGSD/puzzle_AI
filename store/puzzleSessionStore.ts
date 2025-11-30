@@ -1,34 +1,141 @@
 
 import { create } from 'zustand';
 import { CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH } from '../constants/puzzleGrid';
-import { Piece, Position } from '../types';
+import { Piece, Position, QuadrantType, PieceCategoryType, PieceSourceType } from '../types';
+import {
+  PuzzlePiece,
+  DesignMode,
+  PuzzlePieceCategory,
+  PuzzlePieceSource,
+  PieceStatus,
+  UUID,
+} from '../domain/models';
+
+// ====== Mapping Functions ======
+
+/** Map visual QuadrantType to domain DesignMode */
+export const quadrantToMode = (quadrant: QuadrantType): DesignMode => {
+  return quadrant.toUpperCase() as DesignMode;
+};
+
+/** Map domain DesignMode to visual QuadrantType */
+export const modeToQuadrant = (mode: DesignMode): QuadrantType => {
+  return mode.toLowerCase() as QuadrantType;
+};
+
+/** Map visual PieceCategoryType to domain PuzzlePieceCategory */
+export const categoryToDomain = (category?: PieceCategoryType): PuzzlePieceCategory => {
+  if (!category) return 'CLARIFY'; // default
+  return category.toUpperCase() as PuzzlePieceCategory;
+};
+
+/** Map domain PuzzlePieceCategory to visual PieceCategoryType */
+export const categoryToVisual = (category: PuzzlePieceCategory): PieceCategoryType => {
+  return category.toLowerCase() as PieceCategoryType;
+};
+
+/** Map visual PieceSourceType to domain PuzzlePieceSource */
+export const sourceToDomain = (source?: PieceSourceType): PuzzlePieceSource => {
+  if (!source || source === 'user') return 'USER';
+  if (source === 'ai') return 'AI';
+  return 'AI_SUGGESTED_USER_EDITED';
+};
+
+/** Map domain PuzzlePieceSource to visual PieceSourceType */
+export const sourceToVisual = (source: PuzzlePieceSource): PieceSourceType => {
+  if (source === 'USER') return 'user';
+  if (source === 'AI') return 'ai';
+  return 'ai_edited';
+};
+
+/** Convert a visual Piece to a domain PuzzlePiece */
+export const visualToDomainPiece = (
+  piece: Piece,
+  puzzleId: UUID,
+  status: PieceStatus = 'PLACED'
+): PuzzlePiece => {
+  return {
+    id: piece.id,
+    puzzleId,
+    mode: quadrantToMode(piece.quadrant),
+    category: categoryToDomain(piece.category),
+    text: piece.label || '',
+    userAnnotation: undefined,
+    anchorIds: [],
+    fragmentLinks: [],
+    source: sourceToDomain(piece.source),
+    status,
+  };
+};
+
+/** Convert a domain PuzzlePiece to a visual Piece (requires color lookup) */
+export const domainToVisualPiece = (
+  domainPiece: PuzzlePiece,
+  position: Position,
+  cells: Position[],
+  color: string
+): Piece => {
+  return {
+    id: domainPiece.id,
+    quadrant: modeToQuadrant(domainPiece.mode),
+    color,
+    position,
+    cells,
+    label: domainPiece.text,
+    category: categoryToVisual(domainPiece.category),
+    source: sourceToVisual(domainPiece.source),
+  };
+};
+
+// ====== Store Interface ======
 
 interface GameState {
   pieces: Piece[];
+  currentPuzzleId: UUID | null;
+
+  // Actions
+  setCurrentPuzzleId: (puzzleId: UUID | null) => void;
   addPiece: (piece: Piece) => void;
   updatePiecePosition: (id: string, newPos: Position) => void;
+  updatePieceLabel: (id: string, label: string) => void;
   removePiece: (id: string) => void;
+  clearPieces: () => void;
+
+  // Collision detection
   checkCollision: (pieceId: string | null, targetPos: Position, cells: Position[]) => boolean;
   checkConnection: (targetPos: Position, cells: Position[]) => boolean;
   isValidDrop: (targetPos: Position, cells: Position[], ignorePieceId?: string | null) => boolean;
+
+  // Get pieces for sync
+  getPiecesForSync: () => { piece: Piece; puzzleId: UUID | null }[];
 }
 
 // Helper to check if a cell is inside the center card
+// Center card is WIDTH x HEIGHT cells centered at origin (both MUST be even)
+// For 4x4: cells -2,-1,0,1 on both axes
 const isInsideCenterCard = (x: number, y: number) => {
-  const halfW = CENTER_CARD_WIDTH / 2;
-  const halfH = CENTER_CARD_HEIGHT / 2;
+  const halfW = CENTER_CARD_WIDTH / 2;  // 2
+  const halfH = CENTER_CARD_HEIGHT / 2; // 2
 
-  // Grid coordinates are indices. 
-  // For width 2 (half 1): columns -1, 0 are occupied.
-  // Range is [-halfW, halfW).
-
-  return x >= -halfW && x < halfW && y >= -halfH && y < halfH;
+  // Card occupies cells from -half to half-1 on each axis
+  return x >= -halfW && x <= halfW - 1 && y >= -halfH && y <= halfH - 1;
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
   pieces: [],
+  currentPuzzleId: null,
 
-  addPiece: (piece) => set((state) => ({ pieces: [...state.pieces, piece] })),
+  setCurrentPuzzleId: (puzzleId) => set({ currentPuzzleId: puzzleId }),
+
+  addPiece: (piece) => {
+    // Default source to 'user' if not specified
+    const pieceWithDefaults: Piece = {
+      ...piece,
+      source: piece.source || 'user',
+      category: piece.category || 'clarify',
+    };
+    set((state) => ({ pieces: [...state.pieces, pieceWithDefaults] }));
+  },
 
   removePiece: (id) => set((state) => ({ pieces: state.pieces.filter((p) => p.id !== id) })),
 
@@ -36,6 +143,23 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((state) => ({
       pieces: state.pieces.map((p) => (p.id === id ? { ...p, position: newPos } : p)),
     })),
+
+  updatePieceLabel: (id, label) =>
+    set((state) => ({
+      pieces: state.pieces.map((p) => {
+        if (p.id !== id) return p;
+        // Mark AI pieces as edited when user changes label
+        const newSource: PieceSourceType = p.source === 'ai' ? 'ai_edited' : p.source || 'user';
+        return { ...p, label, source: newSource };
+      }),
+    })),
+
+  clearPieces: () => set({ pieces: [] }),
+
+  getPiecesForSync: () => {
+    const { pieces, currentPuzzleId } = get();
+    return pieces.map((piece) => ({ piece, puzzleId: currentPuzzleId }));
+  },
 
   checkCollision: (pieceId, targetPos, cells) => {
     const { pieces } = get();
@@ -68,40 +192,38 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   checkConnection: (targetPos, cells) => {
     const { pieces } = get();
+    const halfW = CENTER_CARD_WIDTH / 2;
+    const halfH = CENTER_CARD_HEIGHT / 2;
 
-    // Directions to check: Up, Down, Left, Right
-    const directions = [
-      { x: 0, y: -1 },
-      { x: 0, y: 1 },
-      { x: -1, y: 0 },
-      { x: 1, y: 0 }
-    ];
+    // Card bounds (for 4x4: -2 to 1 on both axes)
+    const cardMinX = -halfW;
+    const cardMaxX = halfW - 1;
+    const cardMinY = -halfH;
+    const cardMaxY = halfH - 1;
+
+    // Check if cell is adjacent to the center card (touching its edge)
+    const isAdjacentToCenterCard = (x: number, y: number) => {
+      const adjacentLeft = (x === cardMinX - 1) && (y >= cardMinY && y <= cardMaxY);
+      const adjacentRight = (x === cardMaxX + 1) && (y >= cardMinY && y <= cardMaxY);
+      const adjacentTop = (y === cardMinY - 1) && (x >= cardMinX && x <= cardMaxX);
+      const adjacentBottom = (y === cardMaxY + 1) && (x >= cardMinX && x <= cardMaxX);
+      return adjacentLeft || adjacentRight || adjacentTop || adjacentBottom;
+    };
+
+    const directions = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
 
     for (const cell of cells) {
-      const myAbsX = targetPos.x + cell.x;
-      const myAbsY = targetPos.y + cell.y;
+      const absX = targetPos.x + cell.x;
+      const absY = targetPos.y + cell.y;
+
+      if (isAdjacentToCenterCard(absX, absY)) return true;
 
       for (const dir of directions) {
-        const neighborX = myAbsX + dir.x;
-        const neighborY = myAbsY + dir.y;
-
-        // 1. Is neighbor the center card?
-        if (isInsideCenterCard(neighborX, neighborY)) return true;
-
-        // 2. Is neighbor another piece?
+        const nx = absX + dir.x;
+        const ny = absY + dir.y;
         for (const other of pieces) {
-          // If checking self (in case of move), skip self is handled by caller logic usually,
-          // but here we check connection to OTHERS.
-          // However, we don't pass ID here. For a move, we should pass ID to ignore self.
-          // But effectively, 'pieces' in store contains 'self' with OLD position.
-          // We need to be careful not to connect to 'self's old position' if we are moving.
-          // For now, simpler approach: The loop below checks collision against specific cells.
-          // We need to verify if neighbor cell belongs to another piece.
-
-          for (const otherCell of other.cells) {
-            const otherAbsX = other.position.x + otherCell.x;
-            const otherAbsY = other.position.y + otherCell.y;
-            if (otherAbsX === neighborX && otherAbsY === neighborY) {
+          for (const oc of other.cells) {
+            if (other.position.x + oc.x === nx && other.position.y + oc.y === ny) {
               return true;
             }
           }
@@ -113,39 +235,46 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   isValidDrop: (targetPos, cells, ignorePieceId = null) => {
     const state = get();
-    // 1. Must not collide
+    // 1. Must not collide with center card or other pieces
     if (state.checkCollision(ignorePieceId, targetPos, cells)) return false;
 
-    // 2. Must connect to center or existing piece
-    // When checking connection for a piece being moved (ignorePieceId exists), 
-    // we must ensure we don't count the piece itself at its old position as a valid connection point.
-    // However, `checkConnection` iterates over `state.pieces`.
-    // We should filter out `ignorePieceId` inside `checkConnection` ideally, but for now let's patch it:
+    // 2. Must connect to center card edge or existing piece
+    const halfW = CENTER_CARD_WIDTH / 2;
+    const halfH = CENTER_CARD_HEIGHT / 2;
+    const cardMinX = -halfW;
+    const cardMaxX = halfW - 1;
+    const cardMinY = -halfH;
+    const cardMaxY = halfH - 1;
 
-    // Specialized connection check ignoring self
-    const isConnected = (() => {
-      const directions = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
-      for (const cell of cells) {
-        const myAbsX = targetPos.x + cell.x;
-        const myAbsY = targetPos.y + cell.y;
-        for (const dir of directions) {
-          const nx = myAbsX + dir.x;
-          const ny = myAbsY + dir.y;
-          if (isInsideCenterCard(nx, ny)) return true;
+    const isAdjacentToCenterCard = (x: number, y: number) => {
+      const adjacentLeft = (x === cardMinX - 1) && (y >= cardMinY && y <= cardMaxY);
+      const adjacentRight = (x === cardMaxX + 1) && (y >= cardMinY && y <= cardMaxY);
+      const adjacentTop = (y === cardMinY - 1) && (x >= cardMinX && x <= cardMaxX);
+      const adjacentBottom = (y === cardMaxY + 1) && (x >= cardMinX && x <= cardMaxX);
+      return adjacentLeft || adjacentRight || adjacentTop || adjacentBottom;
+    };
 
-          for (const other of state.pieces) {
-            if (other.id === ignorePieceId) continue;
-            for (const oc of other.cells) {
-              const ox = other.position.x + oc.x;
-              const oy = other.position.y + oc.y;
-              if (ox === nx && oy === ny) return true;
+    const directions = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
+
+    for (const cell of cells) {
+      const absX = targetPos.x + cell.x;
+      const absY = targetPos.y + cell.y;
+
+      if (isAdjacentToCenterCard(absX, absY)) return true;
+
+      for (const dir of directions) {
+        const nx = absX + dir.x;
+        const ny = absY + dir.y;
+        for (const other of state.pieces) {
+          if (other.id === ignorePieceId) continue;
+          for (const oc of other.cells) {
+            if (other.position.x + oc.x === nx && other.position.y + oc.y === ny) {
+              return true;
             }
           }
         }
       }
-      return false;
-    })();
-
-    return isConnected;
+    }
+    return false;
   }
 }));

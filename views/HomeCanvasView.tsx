@@ -30,12 +30,31 @@ const INITIAL_LEVERS: Lever[] = [
 // No mock puzzles - puzzles are created through Mascot AI interaction
 const INITIAL_PUZZLES: Puzzle[] = [];
 
-// Mock fragments for testing - kept for development speed
-const INITIAL_FRAGMENTS: FragmentData[] = [
-  { id: 'f1', type: FragmentType.TEXT, position: { x: 100, y: 100 }, size: { width: 220, height: 100 }, content: "Design should feel like an artifact from an alternate 1985.", leverId: 'L2', zIndex: 1 },
-  { id: 'f2', type: FragmentType.IMAGE, position: { x: 400, y: 150 }, size: { width: 200, height: 180 }, content: "https://picsum.photos/400/300", title: "Retro Console", leverId: 'L2', zIndex: 2 },
-  { id: 'f3', type: FragmentType.TEXT, position: { x: 150, y: 350 }, size: { width: 200, height: 80 }, content: "Are we focusing too much on the hardware?", leverId: 'L3', zIndex: 3 },
-];
+// Convert domain fragment to UI fragment format
+const fromDomainFragment = (f: DomainFragment): FragmentData => ({
+  id: f.id,
+  type: f.type === "IMAGE" ? FragmentType.IMAGE :
+        f.type === "LINK" ? FragmentType.LINK :
+        f.type === "OTHER" ? FragmentType.FRAME : FragmentType.TEXT,
+  position: f.position,
+  size: f.size || { width: 200, height: 150 },
+  content: f.content,
+  title: f.type === "IMAGE" ? "Image" : undefined,
+  leverId: f.labels?.[0] || undefined,
+  zIndex: f.zIndex || 1,
+});
+
+// Load initial fragments from contextStore (populated by mockDataLoader)
+const getInitialFragments = (): FragmentData[] => {
+  const domainFragments = contextStore.getState().fragments;
+  if (domainFragments.length > 0) {
+    console.log('[HomeCanvasView] Loading', domainFragments.length, 'fragments from contextStore');
+    return domainFragments.map(fromDomainFragment);
+  }
+  // Fallback to empty if no fragments loaded
+  console.log('[HomeCanvasView] No fragments in contextStore, starting empty');
+  return [];
+};
 
 const PROJECT_ID = contextStore.getState().project.id;
 const now = () => Date.now();
@@ -91,7 +110,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [activeTool, setActiveTool] = useState<ToolType>(ToolType.POINTER);
-  const [fragments, setFragments] = useState<FragmentData[]>(INITIAL_FRAGMENTS);
+  const [fragments, setFragments] = useState<FragmentData[]>(getInitialFragments);
   const [levers, setLevers] = useState<Lever[]>(INITIAL_LEVERS);
   const [puzzles, setPuzzles] = useState<Puzzle[]>(INITIAL_PUZZLES);
   const [activeLeverId, setActiveLeverId] = useState<string | null>(null);

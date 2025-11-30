@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { CELL_SIZE, CENTER_CARD_HEIGHT, CENTER_CARD_WIDTH, COLORS } from '../../constants/puzzleGrid';
 
 interface CenterCardProps {
@@ -11,49 +11,56 @@ export const CenterCard: React.FC<CenterCardProps> = ({
   centralQuestion = 'What is the core question?',
   processAim = '',
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
   const width = CENTER_CARD_WIDTH * CELL_SIZE;
   const height = CENTER_CARD_HEIGHT * CELL_SIZE;
 
-  // Render centered.
-  // With 2x2 grid units centered on origin (0,0), the box occupies indices -1 and 0.
-  // Total Width = 128. Left = -64. Right = 64.
-  // CSS: left: 50%, marginLeft: -64.
-
   return (
     <div
-      className="absolute top-1/2 left-1/2 rounded-2xl flex flex-col items-center justify-center p-2 text-center z-0 shadow-2xl"
+      className="absolute rounded-lg flex flex-col items-center justify-center px-4 py-3 text-center z-10 shadow-2xl cursor-pointer"
       style={{
-        width: width - 8,
-        height: height - 8,
+        // Exact grid-aligned dimensions (same as puzzle pieces)
+        width: width,
+        height: height,
         backgroundColor: COLORS.darkCard,
-        marginTop: -height / 2 + 4,
-        marginLeft: -width / 2 + 4,
-        boxShadow: '0 0 0 1px rgba(255,255,255,0.1), 0 10px 30px -10px rgba(0,0,0,0.5)'
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        boxShadow: isHovered
+          ? '0 0 0 2px rgba(255,255,255,0.3), 0 20px 40px -10px rgba(0,0,0,0.6)'
+          : '0 0 0 1px rgba(255,255,255,0.1), 0 10px 30px -10px rgba(0,0,0,0.5)'
       }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Grid Pattern on Card */}
-      <div
-        className="absolute inset-0 rounded-2xl opacity-10 pointer-events-none"
-        style={{
-          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
-          backgroundSize: `${CELL_SIZE / 2}px ${CELL_SIZE / 2}px`, // Smaller grid on card
-          backgroundPosition: 'center'
-        }}
-      />
-
-      {/* Content */}
-      <div className="relative z-10 flex flex-col items-center px-4 w-full h-full justify-center">
-        <div className="text-white font-bold text-sm leading-snug text-center drop-shadow-md">
+      {/* Content - Question only */}
+      <div className="relative z-10 flex flex-col items-center px-2 w-full h-full justify-center">
+        <div className="text-white font-semibold text-base md:text-lg leading-snug text-center drop-shadow-md">
           {centralQuestion}
         </div>
-        {processAim && (
-          <div className="text-white/60 text-[10px] mt-2 text-center font-medium uppercase tracking-wider border-t border-white/10 pt-1 w-full">
-            {processAim.slice(0, 30)}...
-          </div>
-        )}
       </div>
 
-      {/* Connector Indicators - Removed for cleaner look */}
+      {/* Popup tooltip on hover - positioned above the card */}
+      {processAim && isHovered && (
+        <div
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-white rounded-lg shadow-xl px-4 py-3 min-w-[200px] max-w-[300px] z-50 animate-fade-in"
+          style={{
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Context</div>
+          <div className="text-sm text-gray-700 leading-relaxed">{processAim}</div>
+          {/* Arrow pointing down */}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white"></div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translate(-50%, 8px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+      `}</style>
     </div>
   );
 };

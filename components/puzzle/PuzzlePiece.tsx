@@ -3,6 +3,7 @@ import React, { useRef, useState } from 'react';
 import { motion, useAnimation } from 'framer-motion';
 import { Piece } from '../../types';
 import { CELL_SIZE } from '../../constants/puzzleGrid';
+import { getDistanceAdjustedColor } from '../../constants/colors';
 import { useGameStore } from '../../store/puzzleSessionStore';
 import clsx from 'clsx';
 
@@ -27,7 +28,7 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
   const x = data.position.x * CELL_SIZE;
   const y = data.position.y * CELL_SIZE;
 
-  // Calculate distance from center for transparency gradient
+  // Calculate distance from center for color gradient
   // We use the center of the piece relative to grid origin (0,0)
   // Grid origin is at the crosshair.
   // Piece position is top-left cell. Center of piece is pos + width/2.
@@ -35,13 +36,10 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
   const centerY = data.position.y + (maxY + 1) / 2;
   const distance = Math.sqrt(centerX * centerX + centerY * centerY);
 
-  // Opacity Logic: 
-  // Center (dist ~1-2) -> 1.0
-  // Edge (dist ~6-7) -> 0.85 (Still very visible)
-  const maxDist = 8;
-  // Much gentler falloff
-  const opacityFactor = Math.max(0.85, 1 - (distance / maxDist) * 0.3);
-  const baseOpacity = Math.min(1, opacityFactor);
+  // Color saturation/lightness gradient:
+  // Center (dist small) -> more saturated/darker
+  // Edge (dist large) -> less saturated/lighter
+  const adjustedColor = getDistanceAdjustedColor(data.color, distance);
 
   const handleDragStart = () => {
     setIsDragging(true);
@@ -115,10 +113,9 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
             top: cell.y * CELL_SIZE,
             width: CELL_SIZE - 0.5, // Almost full size for gapless look
             height: CELL_SIZE - 0.5,
-            opacity: isDragging ? 1 : Math.max(0.9, baseOpacity), // Keep opacity high
             background: isDragging && !isValidPos
               ? undefined
-              : `linear-gradient(135deg, ${data.color}FF, ${data.color}CC)`, // Fully opaque start, slightly transparent end
+              : adjustedColor,
             border: '1px solid rgba(255,255,255,0.3)',
             boxShadow: isDragging ? '0 10px 30px -5px rgba(0,0,0,0.3)' : 'inset 0 1px 0 rgba(255,255,255,0.4)',
             borderRadius: '2px', // Tighter radius for gapless feel
@@ -129,7 +126,7 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
 
           {idx === 0 && data.label && (
             <div className="absolute inset-0 flex items-center justify-center p-1 pointer-events-none overflow-hidden z-10">
-              <span className="text-white font-bold text-[10px] uppercase tracking-wider text-center select-none leading-none drop-shadow-md" style={{ opacity: Math.max(0.8, baseOpacity + 0.2) }}>
+              <span className="text-white font-bold text-[10px] uppercase tracking-wider text-center select-none leading-none drop-shadow-md">
                 {data.label}
               </span>
             </div>

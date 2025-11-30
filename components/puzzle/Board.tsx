@@ -45,25 +45,25 @@ export const Board: React.FC<BoardProps> = ({
         quadrant="form"
         label="Form"
         color={COLORS.form}
-        className="top-1/4 left-12"
+        className="top-20 left-6"
       />
       <QuadrantSpawner
         quadrant="motion"
         label="Motion"
         color={COLORS.motion}
-        className="top-1/4 right-12"
+        className="top-20 right-6"
       />
       <QuadrantSpawner
         quadrant="expression"
         label="Expression"
         color={COLORS.expression}
-        className="bottom-1/4 left-12"
+        className="bottom-36 left-6"
       />
       <QuadrantSpawner
         quadrant="function"
         label="Function"
         color={COLORS.function}
-        className="bottom-1/4 right-12"
+        className="bottom-20 right-6"
       />
 
       <Mascot />

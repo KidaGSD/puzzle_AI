@@ -1,13 +1,52 @@
 # BUILDING.md - Puzzle AI System Integration Document
 
 **Last Updated**: 2025-11-30
-**Status**: Phase 1 Complete - View Router & Navigation Implemented
+**Status**: Phase 1 Complete - View Router, Navigation & UI Refinement Done
+**Next Phase**: [Phase 2 - Puzzle Session Data Integration](docs/PHASE2_PLAN.md)
 
 ---
 
 ## Recent Changes (2025-11-30)
 
-### UI Reorganization
+### Phase 1 Complete: UI Refinement & Grid System
+
+#### Grid System Fixes (Final)
+- **CenterCard**: Now exactly 4x2 grid cells (256x128px) - perfectly grid-aligned
+- **Collision Detection**: Pieces cannot overlap center card (bounds: x ∈ [-2,1], y ∈ [-1,0])
+- **Adjacent Placement**: Pieces must connect to center card edge or other pieces
+- **Grid Constants**: `CENTER_CARD_WIDTH = 4`, `CENTER_CARD_HEIGHT = 2` in `constants/puzzleGrid.ts`
+
+#### QuadrantSpawner Redesign
+- Changed from white box + Plus icon to colored pill buttons (`w-24 h-10 rounded-xl`)
+- Label text ("Form", "Motion", etc.) displayed INSIDE the button
+- 100% opacity colors from quadrant palette
+- Removed duplicate labels from GridBackground (now only in spawners)
+
+#### CenterCard Improvements
+- Shows only the central question (clean, minimal)
+- Hover shows popup tooltip ABOVE card with context/processAim
+- Exact grid alignment with `transform: translate(-50%, -50%)`
+- Dark card style with shadow
+
+#### Mascot Speech Bubble
+- Background: `#FFB5FA` (pink)
+- Text color: `#1C1C1C` (dark)
+- Bubble vertically centered with mascot
+- Sharper corners (`rounded-lg`)
+
+#### Spawner Positions (Adjusted)
+- Form: `top-20 left-6` (top-left)
+- Motion: `top-20 right-6` (top-right)
+- Expression: `bottom-36 left-6` (bottom-left, moved up to avoid mascot overlap)
+- Function: `bottom-20 right-6` (bottom-right)
+
+#### Quadrant Colors (per ColorPallate.png)
+- FORM: `#5E5BFF` (Blue)
+- MOTION: `#00DE8C` (Green)
+- EXPRESSION: `#8E34FE` (Purple)
+- FUNCTION: `#FB07AA` (Pink)
+
+### UI Reorganization (Earlier)
 - **Mascot Button**: Moved from bottom-right to bottom-left (`left-6 bottom-28`), positioned below the Toolbar
 - **MascotPanel**: Repositioned to open on left side (`left-24 bottom-24`) with bubble tail pointing left
 - **Toolbar**: Removed purple sparkle "Ask Agent" button - AI interaction now exclusively through Mascot
@@ -673,13 +712,18 @@ const indexedDBAdapter: StorageAdapter = {
 7. ✅ Removed sparkle button from Toolbar
 8. ✅ Removed mock puzzles (kept mock fragments)
 
-### Phase 2: Puzzle Session Integration (3-4 hours) ← NEXT
-1. Move puzzle_session components to `components/puzzle/`
-2. Update imports and paths
-3. Pass puzzle data to CenterCard
-4. Connect QuadrantSpawner to contextStore
-5. Map VisualPiece ↔ PuzzlePiece
-6. Add anchor UI (placeholder)
+### Phase 2: Puzzle Session Data Integration ← NEXT
+**See detailed plan**: [docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md)
+
+Key tasks:
+1. Map VisualPiece → PuzzlePiece (sync puzzleSessionStore → contextStore)
+2. Pass Puzzle data to CenterCard (dynamic central question)
+3. Connect End Puzzle to summary generation
+4. Add AnchorCard components (Starting/Solution)
+5. Connect QuadrantSpawner to quadrantPieceAgent (AI suggestions)
+6. Implement piece deletion/editing
+
+Estimated: ~15 hours (2 days)
 
 ### Phase 3: AI Integration (2-3 hours)
 1. Extend orchestrator for PIECE_* events
@@ -714,13 +758,13 @@ const indexedDBAdapter: StorageAdapter = {
 - [x] Build passes with no TypeScript errors
 
 ### Puzzle Session
-- [ ] Central question displays correctly
-- [ ] Four spawners appear in corners
-- [ ] Drag from spawner creates piece
-- [ ] Piece snaps to grid
-- [ ] Pieces connect to center card
-- [ ] Pieces can be moved/deleted
-- [ ] Shake gesture changes label
+- [x] Central question displays correctly (shows question, hover shows context)
+- [x] Four spawners appear in corners (colored pill buttons)
+- [x] Drag from spawner creates piece
+- [x] Piece snaps to grid
+- [x] Pieces connect to center card (collision detection working)
+- [ ] Pieces can be moved/deleted (deletion not implemented)
+- [x] Shake gesture changes label
 
 ### AI Integration
 - [ ] "Ask AI" generates piece suggestions
@@ -763,6 +807,7 @@ import { PuzzleBoard } from '@/components/puzzle/PuzzleBoard';
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Prepared for**: Puzzle Session Integration Sprint
 **Phase 1 Completed**: 2025-11-30
+**Phase 2 Plan**: See [docs/PHASE2_PLAN.md](docs/PHASE2_PLAN.md)

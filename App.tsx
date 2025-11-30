@@ -32,11 +32,13 @@ export default function App() {
   const detachOrchestratorRef = useRef<null | (() => void)>(null);
 
   // Attach orchestrator once on mount
+  // Note: Mock data is auto-initialized in runtime.ts at module load time
   useEffect(() => {
     console.log('[app] useEffect: attaching orchestrator...');
     const detach = ensureOrchestrator();
     detachOrchestratorRef.current = detach;
     console.log('[app] orchestrator attached');
+    console.log('[app] Fragments in store:', contextStore.getState().fragments.length);
 
     return () => {
       console.log('[app] cleaning up orchestrator');
