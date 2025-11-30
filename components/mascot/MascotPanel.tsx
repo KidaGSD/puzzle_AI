@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { MascotProposal } from '../../ai/agents/mascotAgent'
 import { eventBus } from '../../store/runtime'
+import { motion, AnimatePresence } from 'framer-motion'
+import { X, Sparkles, MessageCircle, ArrowRight } from 'lucide-react'
 
 interface MascotPanelProps {
   isOpen: boolean
@@ -9,411 +11,242 @@ interface MascotPanelProps {
   onStartPuzzle: (proposal: MascotProposal) => void
 }
 
-type MascotMode = 'suggest' | 'question'
+type ViewState = 'menu' | 'question' | 'analyzing' | 'proposal'
 
 /**
- * Main mascot interaction panel that slides in from the right.
- * Provides two modes:
- * 1. "Suggest a puzzle" - AI analyzes fragments and suggests a puzzle
- * 2. "I have a question" - User inputs a question to create a puzzle
+ * MascotPanel - Redesigned as a Conversational Bubble
+ * Floats near the mascot button, offering a premium, chat-like experience.
  */
 export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: MascotPanelProps) {
-  const [mode, setMode] = useState<MascotMode>('suggest')
+  const [view, setView] = useState<ViewState>('menu')
   const [userQuestion, setUserQuestion] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
 
-  if (!isOpen) return null
-
-  const handleGenerate = async () => {
-    setIsGenerating(true)
-
-    if (mode === 'suggest') {
-      // Emit event for AI to suggest a puzzle
-      eventBus.emitType('MASCOT_CLICKED', {
-        action: 'suggest_puzzle'
-      })
-    } else {
-      // Emit event for AI to process user's question
-      if (userQuestion.trim()) {
-        eventBus.emitType('MASCOT_CLICKED', {
-          action: 'start_from_my_question',
-          userQuestion: userQuestion.trim()
-        })
+  // Reset view when opened/closed or proposal changes
+  useEffect(() => {
+    if (isOpen) {
+      if (proposal) {
+        setView('proposal')
+      } else {
+        setView('menu')
         setUserQuestion('')
       }
     }
+  }, [isOpen, proposal])
 
-    // Reset after a short delay (orchestrator will process)
-    setTimeout(() => setIsGenerating(false), 500)
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        // Don't close if clicking the mascot button (handled by parent)
+        const target = event.target as HTMLElement;
+        if (!target.closest('.mascot-button')) {
+          onClose();
+        }
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen, onClose]);
+
+  const handleSuggestClick = () => {
+    setView('analyzing')
+    // Simulate short delay for "thinking" feel
+    setTimeout(() => {
+      eventBus.emitType('MASCOT_CLICKED', { action: 'suggest_puzzle' })
+    }, 800)
   }
 
-  const handleDecline = () => {
-    onClose()
+  const handleQuestionSubmit = () => {
+    if (!userQuestion.trim()) return
+    setView('analyzing')
+
+    setTimeout(() => {
+      eventBus.emitType('MASCOT_CLICKED', {
+        action: 'start_from_my_question',
+        userQuestion: userQuestion.trim()
+      })
+    }, 800)
   }
+
+  if (!isOpen && !proposal) return null
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="mascot-backdrop"
-        onClick={onClose}
-        aria-hidden="true"
-      />
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          ref={panelRef}
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.95 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          className="fixed right-24 bottom-8 z-[999] w-[380px] max-w-[calc(100vw-32px)]"
+        >
+          <div className="relative bg-white/80 backdrop-blur-xl border border-white/50 shadow-2xl rounded-2xl overflow-hidden flex flex-col">
 
-      {/* Panel */}
-      <div className="mascot-panel">
-        {/* Header */}
-        <div className="mascot-panel-header">
-          <h2 className="text-xl font-bold">✨ AI Assistant</h2>
-          <button
-            onClick={onClose}
-            className="mascot-close-btn"
-            aria-label="Close panel"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Mode Tabs */}
-        <div className="mascot-tabs">
-          <button
-            className={`mascot-tab ${mode === 'suggest' ? 'active' : ''}`}
-            onClick={() => setMode('suggest')}
-          >
-            Suggest a puzzle
-          </button>
-          <button
-            className={`mascot-tab ${mode === 'question' ? 'active' : ''}`}
-            onClick={() => setMode('question')}
-          >
-            I have a question
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="mascot-content">
-          {mode === 'suggest' ? (
-            <div className="mascot-mode-content">
-              <p className="text-gray-600 mb-4">
-                I'll analyze your fragments and suggest a puzzle to help you move forward.
-              </p>
+            {/* Header / Close */}
+            <div className="absolute top-3 right-3 z-10">
               <button
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                className="mascot-generate-btn"
+                onClick={onClose}
+                className="p-1.5 rounded-full hover:bg-black/5 text-gray-400 hover:text-gray-600 transition-colors"
               >
-                {isGenerating ? 'Analyzing...' : 'Generate Suggestion'}
+                <X size={16} />
               </button>
             </div>
-          ) : (
-            <div className="mascot-mode-content">
-              <p className="text-gray-600 mb-4">
-                Describe what you're stuck on or what you'd like to explore.
-              </p>
-              <textarea
-                value={userQuestion}
-                onChange={(e) => setUserQuestion(e.target.value)}
-                placeholder="Example: How do I map features to different audiences?"
-                className="mascot-textarea"
-                rows={4}
-              />
-              <button
-                onClick={handleGenerate}
-                disabled={isGenerating || !userQuestion.trim()}
-                className="mascot-generate-btn"
-              >
-                {isGenerating ? 'Creating...' : 'Create Puzzle'}
-              </button>
-            </div>
-          )}
 
-          {/* Proposal Display */}
-          {proposal && (
-            <div className="mascot-proposal">
-              <div className="mascot-proposal-header">
-                <h3 className="text-lg font-bold">Puzzle Proposal</h3>
-              </div>
+            {/* Content Area */}
+            <div className="p-6">
 
-              <div className="mascot-proposal-body">
-                {/* Central Question */}
-                <div className="mb-4">
-                  <div className="text-sm text-gray-500 mb-1">Central Question</div>
-                  <div className="text-xl font-bold">{proposal.centralQuestion}</div>
+              {/* MENU VIEW */}
+              {view === 'menu' && (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-purple-600">
+                      <Sparkles size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-800">Hi there!</h3>
+                      <p className="text-sm text-gray-500">How can I help you think today?</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <button
+                      onClick={handleSuggestClick}
+                      className="group flex items-center gap-4 p-4 rounded-xl bg-white border border-purple-100 shadow-sm hover:shadow-md hover:border-purple-200 hover:bg-purple-50/50 transition-all text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-sm group-hover:scale-110 transition-transform">
+                        <Sparkles size={18} />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-800">Suggest a Puzzle</div>
+                        <div className="text-xs text-gray-500">I'll look at your fragments</div>
+                      </div>
+                      <ArrowRight size={16} className="ml-auto text-purple-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />
+                    </button>
+
+                    <button
+                      onClick={() => setView('question')}
+                      className="group flex items-center gap-4 p-4 rounded-xl bg-white border border-blue-100 shadow-sm hover:shadow-md hover:border-blue-200 hover:bg-blue-50/50 transition-all text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white shadow-sm group-hover:scale-110 transition-transform">
+                        <MessageCircle size={18} />
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-800">I have a question</div>
+                        <div className="text-xs text-gray-500">Start from a specific topic</div>
+                      </div>
+                      <ArrowRight size={16} className="ml-auto text-blue-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                {/* Primary Modes */}
-                <div className="mb-4">
-                  <div className="text-sm text-gray-500 mb-2">Focus Areas</div>
-                  <div className="flex flex-wrap gap-2">
-                    {proposal.primaryModes.map((mode) => (
-                      <span
-                        key={mode}
-                        className="mascot-mode-badge"
-                        data-mode={mode.toLowerCase()}
-                      >
+              {/* QUESTION VIEW */}
+              {view === 'question' && (
+                <div className="flex flex-col h-full">
+                  <button
+                    onClick={() => setView('menu')}
+                    className="self-start text-xs text-gray-400 hover:text-gray-600 mb-4 flex items-center gap-1"
+                  >
+                    ← Back
+                  </button>
+
+                  <h3 className="font-bold text-gray-800 mb-2">What's on your mind?</h3>
+                  <textarea
+                    autoFocus
+                    value={userQuestion}
+                    onChange={(e) => setUserQuestion(e.target.value)}
+                    placeholder="e.g. How do I make this feel more nostalgic?"
+                    className="w-full p-3 rounded-xl bg-gray-50 border-none focus:ring-2 focus:ring-purple-500/20 resize-none text-sm mb-4 min-h-[100px]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleQuestionSubmit();
+                      }
+                    }}
+                  />
+
+                  <button
+                    onClick={handleQuestionSubmit}
+                    disabled={!userQuestion.trim()}
+                    className="w-full py-3 rounded-xl bg-black text-white font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    Create Puzzle <ArrowRight size={16} />
+                  </button>
+                </div>
+              )}
+
+              {/* ANALYZING VIEW */}
+              {view === 'analyzing' && (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <div className="relative w-16 h-16 mb-4">
+                    <div className="absolute inset-0 rounded-full border-4 border-purple-100"></div>
+                    <div className="absolute inset-0 rounded-full border-4 border-purple-500 border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles size={20} className="text-purple-500 animate-pulse" />
+                    </div>
+                  </div>
+                  <h3 className="font-bold text-gray-800 mb-1">Thinking...</h3>
+                  <p className="text-sm text-gray-500">Analyzing your context</p>
+                </div>
+              )}
+
+              {/* PROPOSAL VIEW */}
+              {view === 'proposal' && proposal && (
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+                      <Sparkles size={16} />
+                    </div>
+                    <span className="text-sm font-bold text-green-700 uppercase tracking-wide">Puzzle Ready</span>
+                  </div>
+
+                  <h3 className="text-xl font-bold text-gray-900 leading-tight mb-3">
+                    {proposal.centralQuestion}
+                  </h3>
+
+                  <p className="text-sm text-gray-600 mb-4 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    {proposal.rationale}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2 mb-6">
+                    {proposal.primaryModes.map(mode => (
+                      <span key={mode} className="px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium border border-gray-200">
                         {mode}
                       </span>
                     ))}
                   </div>
-                </div>
 
-                {/* Rationale */}
-                <div className="mb-6">
-                  <div className="text-sm text-gray-500 mb-1">Why this puzzle?</div>
-                  <div className="text-gray-700">{proposal.rationale}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={onClose}
+                      className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Not now
+                    </button>
+                    <button
+                      onClick={() => onStartPuzzle(proposal)}
+                      className="py-2.5 px-4 rounded-xl bg-black text-white font-medium hover:bg-gray-800 transition-colors shadow-lg shadow-purple-500/20"
+                    >
+                      Start Puzzle
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => onStartPuzzle(proposal)}
-                    className="mascot-accept-btn"
-                  >
-                    Start This Puzzle
-                  </button>
-                  <button
-                    onClick={handleDecline}
-                    className="mascot-decline-btn"
-                  >
-                    Not Now
-                  </button>
-                </div>
-              </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      <style>{`
-        .mascot-backdrop {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.3);
-          z-index: 1001;
-          animation: fadeIn 0.2s ease;
-        }
-
-        .mascot-panel {
-          position: fixed;
-          right: 0;
-          top: 0;
-          bottom: 0;
-          width: 400px;
-          max-width: 100vw;
-          background: white;
-          box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
-          z-index: 1002;
-          display: flex;
-          flex-direction: column;
-          animation: slideInRight 0.3s ease;
-        }
-
-        .mascot-panel-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 24px;
-          border-bottom: 1px solid #e5e7eb;
-        }
-
-        .mascot-close-btn {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          border: none;
-          background: #f3f4f6;
-          color: #6b7280;
-          font-size: 20px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.2s;
-        }
-
-        .mascot-close-btn:hover {
-          background: #e5e7eb;
-          color: #374151;
-        }
-
-        .mascot-tabs {
-          display: flex;
-          border-bottom: 1px solid #e5e7eb;
-          background: #f9fafb;
-        }
-
-        .mascot-tab {
-          flex: 1;
-          padding: 12px 16px;
-          border: none;
-          background: transparent;
-          color: #6b7280;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-          position: relative;
-        }
-
-        .mascot-tab.active {
-          color: #a855f7;
-          background: white;
-        }
-
-        .mascot-tab.active::after {
-          content: '';
-          position: absolute;
-          bottom: -1px;
-          left: 0;
-          right: 0;
-          height: 2px;
-          background: #a855f7;
-        }
-
-        .mascot-tab:hover:not(.active) {
-          background: #f3f4f6;
-        }
-
-        .mascot-content {
-          flex: 1;
-          overflow-y: auto;
-          padding: 24px;
-        }
-
-        .mascot-mode-content {
-          margin-bottom: 24px;
-        }
-
-        .mascot-textarea {
-          width: 100%;
-          padding: 12px;
-          border: 1px solid #e5e7eb;
-          border-radius: 8px;
-          font-size: 14px;
-          font-family: inherit;
-          resize: vertical;
-          margin-bottom: 12px;
-          transition: border-color 0.2s;
-        }
-
-        .mascot-textarea:focus {
-          outline: none;
-          border-color: #a855f7;
-        }
-
-        .mascot-generate-btn {
-          width: 100%;
-          padding: 12px 24px;
-          border: none;
-          border-radius: 8px;
-          background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
-          color: white;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .mascot-generate-btn:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
-        }
-
-        .mascot-generate-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .mascot-proposal {
-          margin-top: 24px;
-          padding: 20px;
-          background: linear-gradient(135deg, #fef3c7 0%, #fce7f3 100%);
-          border-radius: 12px;
-        }
-
-        .mascot-proposal-header {
-          margin-bottom: 16px;
-        }
-
-        .mascot-proposal-body {
-          /* Styling already defined above */
-        }
-
-        .mascot-mode-badge {
-          padding: 4px 12px;
-          border-radius: 12px;
-          font-size: 12px;
-          font-weight: 600;
-          text-transform: uppercase;
-        }
-
-        .mascot-mode-badge[data-mode="form"] {
-          background: #dbeafe;
-          color: #1e40af;
-        }
-
-        .mascot-mode-badge[data-mode="motion"] {
-          background: #d1fae5;
-          color: #065f46;
-        }
-
-        .mascot-mode-badge[data-mode="expression"] {
-          background: #e9d5ff;
-          color: #6b21a8;
-        }
-
-        .mascot-mode-badge[data-mode="function"] {
-          background: #fed7aa;
-          color: #9a3412;
-        }
-
-        .mascot-accept-btn {
-          flex: 1;
-          padding: 10px 16px;
-          border: none;
-          border-radius: 8px;
-          background: #10b981;
-          color: white;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .mascot-accept-btn:hover {
-          background: #059669;
-          transform: translateY(-1px);
-        }
-
-        .mascot-decline-btn {
-          flex: 0 0 auto;
-          padding: 10px 16px;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
-          background: white;
-          color: #6b7280;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .mascot-decline-btn:hover {
-          background: #f3f4f6;
-          border-color: #9ca3af;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-
-        @keyframes slideInRight {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-      `}</style>
-    </>
+          {/* Bubble Tail */}
+          <div className="absolute -bottom-2 right-8 w-4 h-4 bg-white/80 backdrop-blur-xl border-r border-b border-white/50 transform rotate-45"></div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

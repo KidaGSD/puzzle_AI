@@ -33,10 +33,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <div className="flex items-center gap-6 pointer-events-auto">
           {/* Logo Section */}
           <div className="flex items-center gap-3">
-            <img src="/Frame 1.svg" alt="Puzzle AI" className="w-8 h-8 object-contain" />
-            <span className="text-xl font-extrabold text-gray-900 tracking-tight">Puzzle AI</span>
-            <span className="text-gray-300">/</span>
-            <span className="text-lg font-semibold text-gray-700">{projectTitle}</span>
+            <img src="/Frame 1.svg" alt="Puzzle AI" className="h-10 w-auto object-contain" />
           </div>
 
           {/* Input Field with Info Icon */}
@@ -46,8 +43,8 @@ export const TopBar: React.FC<TopBarProps> = ({
               value={aim}
               onChange={(e) => setAim(e.target.value)}
               className={`w-full bg-transparent backdrop-blur-sm border rounded-lg px-4 py-2 pr-10 text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20 shadow-sm font-medium transition-all text-sm ${isEmpty
-                  ? 'border-yellow-400 focus:border-yellow-500'
-                  : 'border-gray-200 focus:border-[#3B82F6]'
+                ? 'border-yellow-400 focus:border-yellow-500'
+                : 'border-gray-200 focus:border-[#3B82F6]'
                 }`}
               placeholder="Write your project brief here"
             />
