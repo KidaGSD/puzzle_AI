@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
-import { GripVertical, Link2, Image as ImageIcon, Scaling } from 'lucide-react';
+import { GripVertical, Link2, Image as ImageIcon, Trash2 } from 'lucide-react';
 
 interface FragmentProps {
   data: FragmentData;
@@ -10,6 +10,9 @@ interface FragmentProps {
   onResizeStart: (e: React.MouseEvent, id: string) => void;
   onUpdate: (id: string, content: string) => void;
   leverColor?: string;
+  summary?: string;
+  tags?: string[];
+  onDelete?: (id: string) => void;
 }
 
 export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
@@ -19,7 +22,10 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   onMouseDown,
   onResizeStart,
   onUpdate,
-  leverColor
+  leverColor,
+  summary,
+  tags,
+  onDelete
 }, ref) => {
   const [localContent, setLocalContent] = useState(data.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -82,8 +88,16 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
 
           <GripVertical size={14} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
 
-          {/* Placeholder for symmetry or close button */}
-          <div className="w-2.5"></div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onDelete) onDelete(data.id);
+            }}
+            className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100"
+            title="Delete fragment"
+          >
+            <Trash2 size={14} />
+          </button>
         </div>
       )}
 
@@ -123,6 +137,22 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
             placeholder="Type a note..."
             onMouseDown={(e) => e.stopPropagation()} // Allow selecting text without dragging fragment immediately
           />
+        )}
+
+        {/* Summary & Tags */}
+        {(summary || (tags && tags.length)) && !isFrame && (
+          <div className="mt-2 text-[12px] text-gray-500 space-y-1">
+            {summary && <div className="leading-snug">Summary: {summary}</div>}
+            {tags && tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {tags.slice(0, 4).map(tag => (
+                  <span key={tag} className="px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-semibold text-gray-600">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -7,6 +7,10 @@ import { Fragment } from './components/Fragment';
 import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE } from './types';
 import { analyzeBoard } from './services/geminiService';
 import { Plus } from 'lucide-react';
+import { contextStore, eventBus, ensureOrchestrator } from './store/runtime';
+import { Fragment as DomainFragment, PuzzleSummary } from './domain/models';
+import { attachOrchestratorStub } from './ai/orchestratorStub';
+import { SummaryCard } from './components/SummaryCard';
 
 // --- MOCK DATA ---
 const INITIAL_LEVERS: Lever[] = [
@@ -29,6 +33,45 @@ const INITIAL_FRAGMENTS: FragmentData[] = [
   { id: 'f3', type: FragmentType.TEXT, position: { x: 150, y: 350 }, size: { width: 200, height: 80 }, content: "Are we focusing too much on the hardware?", leverId: 'L3', zIndex: 3 },
 ];
 
+const PROJECT_ID = contextStore.getState().project.id;
+const now = () => Date.now();
+
+const mapFragmentType = (type: FragmentType): DomainFragment["type"] => {
+  if (type === FragmentType.FRAME) return "OTHER";
+  if (type === FragmentType.LINK) return "LINK";
+  if (type === FragmentType.IMAGE) return "IMAGE";
+  return "TEXT";
+};
+
+const toDomainFragment = (f: FragmentData): DomainFragment => ({
+  id: f.id,
+  projectId: PROJECT_ID,
+  type: mapFragmentType(f.type),
+  content: f.content,
+  position: f.position,
+  size: f.size,
+  summary: undefined,
+  tags: undefined,
+  labels: [],
+  zIndex: f.zIndex,
+  createdAt: now(),
+  updatedAt: now(),
+});
+
+  const shallowFragmentEqual = (a: FragmentData, b: FragmentData) => {
+    return (
+      a.type === b.type &&
+      a.content === b.content &&
+      a.title === b.title &&
+    a.leverId === b.leverId &&
+    a.position.x === b.position.x &&
+    a.position.y === b.position.y &&
+    a.size.width === b.size.width &&
+    a.size.height === b.size.height &&
+    a.zIndex === b.zIndex
+  );
+};
+
 // --- APP COMPONENT ---
 export default function App() {
   // State
@@ -45,14 +88,18 @@ export default function App() {
   const [levers, setLevers] = useState<Lever[]>(INITIAL_LEVERS);
   const [puzzles, setPuzzles] = useState<Puzzle[]>(INITIAL_PUZZLES);
   const [activeLeverId, setActiveLeverId] = useState<string | null>(null);
-  const [projectTitle] = useState("Sci-Fi Animation Concept");
-  const [aim, setAim] = useState("Explore the tension between analog warmth and digital coldness.");
+  const [projectTitle] = useState(contextStore.getState().project.title);
+  const [aim, setAim] = useState(contextStore.getState().project.processAim);
+  const [puzzleSummaries, setPuzzleSummaries] = useState(contextStore.getState().puzzleSummaries);
   const [showDebug, setShowDebug] = useState(true);
+  const [storeFragments, setStoreFragments] = useState(contextStore.getState().fragments);
 
   // Interaction State
   const [interactionMode, setInteractionMode] = useState<'IDLE' | 'DRAG_CANVAS' | 'DRAG_FRAGMENT' | 'RESIZE_FRAGMENT'>('IDLE');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selection, setSelection] = useState<string | null>(null);
+  const prevFragmentsRef = useRef<FragmentData[]>([]);
+  const prevPuzzlesRef = useRef<Puzzle[]>([]);
 
   // Refs for direct DOM manipulation (Performance)
   const containerRef = useRef<HTMLDivElement>(null);
@@ -65,6 +112,7 @@ export default function App() {
   const initialChildrenDataRef = useRef<Map<string, { x: number, y: number }>>(new Map());
   const pendingImagePosition = useRef<{ x: number, y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const detachOrchestratorRef = useRef<null | (() => void)>(null);
 
   // --- MOUSE HANDLERS ---
 
@@ -75,10 +123,98 @@ export default function App() {
         e.preventDefault();
         setShowDebug(prev => !prev);
       }
+      // Delete fragment via Delete/Backspace when not typing in inputs
+      const target = e.target as HTMLElement | null;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isTyping) return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
+        setFragments(prev => prev.filter(f => f.id !== selection));
+        setSelection(null);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selection]);
+
+  // Attach orchestrator stub once
+  useEffect(() => {
+    if (detachOrchestratorRef.current) return;
+    detachOrchestratorRef.current = ensureOrchestrator();
+    return () => {
+      detachOrchestratorRef.current?.();
+    };
   }, []);
+
+  // Subscribe to store changes so UI can reflect agent-updated summaries/tags and summaries
+  useEffect(() => {
+    const unsub = contextStore.subscribe(() => {
+      const state = contextStore.getState();
+      setStoreFragments(state.fragments);
+      setPuzzleSummaries(state.puzzleSummaries);
+      console.debug("[app] store updated", {
+        fragments: state.fragments.length,
+        summaries: state.puzzleSummaries.length
+      });
+    });
+    return () => unsub();
+  }, []);
+
+  // Sync aim into ProjectStore
+  useEffect(() => {
+    contextStore.updateProcessAim(aim);
+  }, [aim]);
+
+  // Sync fragments into ProjectStore and emit UI events
+  useEffect(() => {
+    const prevMap = new Map(prevFragmentsRef.current.map(f => [f.id, f]));
+
+    fragments.forEach(f => {
+      const prev = prevMap.get(f.id);
+      const domainFrag = toDomainFragment(f);
+      if (!prev) {
+        contextStore.upsertFragment(domainFrag);
+        eventBus.emitType("FRAGMENT_ADDED", { fragmentId: f.id });
+      } else if (!shallowFragmentEqual(prev, f)) {
+        contextStore.upsertFragment(domainFrag);
+        eventBus.emitType("FRAGMENT_UPDATED", { fragmentId: f.id });
+      }
+      prevMap.delete(f.id);
+    });
+
+    prevMap.forEach((_, id) => {
+      contextStore.deleteFragment(id);
+      eventBus.emitType("FRAGMENT_DELETED", { fragmentId: id });
+    });
+
+    prevFragmentsRef.current = fragments;
+  }, [fragments]);
+
+  // Sync puzzles into ProjectStore (deck keeps all puzzles; summary status handled elsewhere)
+  useEffect(() => {
+    const prevMap = new Map(prevPuzzlesRef.current.map(p => [p.id, p]));
+    puzzles.forEach(p => {
+      const prev = prevMap.get(p.id);
+      const domainPuzzle = {
+        id: p.id,
+        projectId: PROJECT_ID,
+        centralQuestion: p.title,
+        createdFrom: "user_request" as const,
+        createdAt: now(),
+      };
+      if (!prev) {
+        contextStore.addPuzzle(domainPuzzle);
+        eventBus.emitType("PUZZLE_CREATED", { puzzleId: p.id });
+      } else {
+        contextStore.addPuzzle(domainPuzzle);
+        eventBus.emitType("PUZZLE_UPDATED", { puzzleId: p.id });
+      }
+      prevMap.delete(p.id);
+    });
+    prevMap.forEach((_, id) => {
+      // No delete yet; deck keeps historical puzzle entries
+    });
+    prevPuzzlesRef.current = puzzles;
+  }, [puzzles]);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
@@ -320,6 +456,22 @@ export default function App() {
     setFragments(prev => prev.map(f => f.id === id ? { ...f, content } : f));
   };
 
+  const handleMockFinishPuzzle = () => {
+    if (!puzzles.length) return;
+    const target = puzzles[0];
+    console.log("[mock] finish puzzle", target.id);
+    eventBus.emitType("PUZZLE_FINISH_CLICKED", {
+      puzzleId: target.id,
+      centralQuestion: target.title,
+      anchors: [
+        { type: "STARTING", text: "Analog warmth as emotional hook" },
+        { type: "SOLUTION", text: "Calm motion to match retro tone" }
+      ],
+      pieces: [],
+      fragmentIds: fragments.slice(0, 2).map(f => f.id)
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -428,21 +580,24 @@ export default function App() {
           className="relative w-full h-full"
         >
           {fragments.map(fragment => (
-            <Fragment
-              key={fragment.id}
-              ref={(el) => {
-                if (el) fragmentRefs.current.set(fragment.id, el);
-                else fragmentRefs.current.delete(fragment.id);
-              }}
-              data={fragment}
-              scale={scale}
-              isSelected={selection === fragment.id}
-              onMouseDown={handleFragmentMouseDown}
-              onResizeStart={handleResizeStart}
-              onUpdate={handleUpdateFragment}
-              leverColor={levers.find(l => l.id === fragment.leverId)?.color}
-            />
-          ))}
+          <Fragment
+            key={fragment.id}
+            ref={(el) => {
+              if (el) fragmentRefs.current.set(fragment.id, el);
+              else fragmentRefs.current.delete(fragment.id);
+            }}
+            data={fragment}
+            scale={scale}
+            isSelected={selection === fragment.id}
+            onMouseDown={handleFragmentMouseDown}
+            onResizeStart={handleResizeStart}
+            onUpdate={handleUpdateFragment}
+            leverColor={levers.find(l => l.id === fragment.leverId)?.color}
+            summary={storeFragments.find(sf => sf.id === fragment.id)?.summary}
+            tags={storeFragments.find(sf => sf.id === fragment.id)?.tags}
+            onDelete={(id) => setFragments(prev => prev.filter(f => f.id !== id))}
+          />
+        ))}
         </div>
       </div>
 
@@ -451,12 +606,32 @@ export default function App() {
         activeLeverId={activeLeverId}
         puzzles={puzzles}
         levers={levers}
+        puzzleSummaries={puzzleSummaries}
         onSelectPuzzle={(p) => console.log("Selected puzzle", p.title)}
       />
+
+      {/* Puzzle Summary Cards (placeholder, stacked) */}
+      {puzzleSummaries.length > 0 && (
+        <div className="absolute left-6 bottom-32 z-30 flex flex-col gap-3 pointer-events-auto">
+          {puzzleSummaries.map((s) => (
+            <SummaryCard key={s.puzzleId} summary={s} />
+          ))}
+        </div>
+      )}
 
       {/* Hint for Controls */}
       <div className="absolute bottom-4 right-4 z-40 text-[#A09C94] text-xs font-mono bg-[#F5F1E8]/80 p-2 rounded pointer-events-none">
         Middle Click / Space+Drag to Pan • Scroll to Zoom
+      </div>
+
+      {/* Mock finish puzzle button */}
+      <div className="absolute bottom-4 left-4 z-40">
+        <button
+          onClick={handleMockFinishPuzzle}
+          className="px-3 py-2 bg-[#262626] text-white text-xs rounded-lg shadow hover:bg-black transition"
+        >
+          Mock Finish First Puzzle
+        </button>
       </div>
 
       {/* Debug Overlay - Toggle with backtick (`) key */}
@@ -469,6 +644,8 @@ export default function App() {
           <p>Selection: {selection}</p>
           <p>Dragging: {activeId}</p>
           <p>Fragments: {fragments.length}</p>
+          <p>Store Fragments: {storeFragments.length}</p>
+          <p>Puzzle Summaries: {puzzleSummaries.length}</p>
           <div className="mt-2 border-t border-green-800 pt-2">
             {lastLog.map((log, i) => <div key={i}>{log}</div>)}
           </div>

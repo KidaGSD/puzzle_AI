@@ -32,6 +32,8 @@ export interface FragmentData {
   title?: string; // For links or images
   leverId?: string; // The "cluster" or "lever" this belongs to
   zIndex: number;
+  summary?: string;
+  tags?: string[];
 }
 
 export interface Lever {

@@ -1,16 +1,18 @@
 
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { Puzzle, Lever } from '../types';
-import { Gamepad2, ChevronRight, HelpCircle, GripHorizontal } from 'lucide-react';
+import { Gamepad2, ChevronRight, HelpCircle, GripHorizontal, CheckCircle2 } from 'lucide-react';
+import { PuzzleSummary } from '../domain/models';
 
 interface PuzzleDeckProps {
   activeLeverId: string | null;
   puzzles: Puzzle[];
   levers: Lever[];
+  puzzleSummaries?: PuzzleSummary[];
   onSelectPuzzle: (puzzle: Puzzle) => void;
 }
 
-export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, levers, onSelectPuzzle }) => {
+export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, levers, puzzleSummaries = [], onSelectPuzzle }) => {
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 
   // Filter puzzles based on selection
@@ -34,6 +36,7 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
       >
         {displayPuzzles.map((puzzle, index) => {
           const leverColor = getLeverColor(puzzle.leverId);
+          const isFinished = puzzleSummaries.some(s => s.puzzleId === puzzle.id);
 
           // Calculate offset based on hover state
           let translateY = 'translateY(120px)'; // Default peek height (shows more top)
@@ -107,6 +110,12 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                     <h3 className="text-xs font-bold text-gray-800 leading-tight font-mono mb-2 line-clamp-4">
                       {puzzle.title}
                     </h3>
+
+                    {isFinished && (
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase tracking-wide mb-2">
+                        <CheckCircle2 size={12} /> Finished
+                      </div>
+                    )}
 
                     <div className="mt-auto flex items-center gap-1 opacity-60">
                       {puzzle.type === 'expand' && <ChevronRight size={12} />}
