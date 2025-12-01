@@ -336,7 +336,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
 
             console.log(`[QuadrantSpawner] Creating piece with ${hasPreGenerated ? 'pre-generated' : 'fallback'} content: "${title}" (priority: ${piecePriority})`);
 
-            // First add the piece to the store
+            // First add the piece to the store with fragment fields
             addPiece({
                 id: pendingPieceId,
                 quadrant,
@@ -349,6 +349,11 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 category,
                 source: 'ai',
                 priority: piecePriority as PiecePriority,
+                // Pass fragment fields from pre-generated piece for summary popup
+                fragmentId: hasPreGenerated ? preGeneratedPiece.fragment_id : undefined,
+                fragmentTitle: hasPreGenerated ? preGeneratedPiece.fragment_title : undefined,
+                fragmentSummary: hasPreGenerated ? preGeneratedPiece.fragment_summary : undefined,
+                imageUrl: hasPreGenerated ? preGeneratedPiece.image_url : undefined,
             });
 
             // Mark pre-generated piece as used

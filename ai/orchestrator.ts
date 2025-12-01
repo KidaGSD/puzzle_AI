@@ -478,12 +478,14 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const state = store.getState();
     const payload: any = event.payload || {};
 
-    // Build input for PuzzleSessionAgent
+    // Build input for PuzzleSessionAgent with proper fragment data
     const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 10).map(f => ({
       id: f.id,
       type: f.type,
+      title: f.title || f.summary?.slice(0, 30) || "Untitled",
       summary: f.summary || f.content.slice(0, 100),
       tags: f.tags,
+      imageUrl: f.type === "IMAGE" ? f.content : undefined,
     }));
 
     const input: PuzzleSessionInput = {
@@ -590,8 +592,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 5).map(f => ({
       id: f.id,
       type: f.type,
+      title: f.title || f.summary?.slice(0, 30) || "Untitled",
       summary: f.summary || f.content.slice(0, 100),
       tags: f.tags,
+      imageUrl: f.type === "IMAGE" ? f.content : undefined,
     }));
 
     try {

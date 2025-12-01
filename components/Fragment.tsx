@@ -156,33 +156,38 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
           </div>
         )}
 
-        {/* Puzzle Labels */}
+        {/* Puzzle Labels - colored by puzzle type */}
         {!isFrame && (() => {
           const storeFragment = contextStore.getState().fragments.find(f => f.id === data.id);
           const labels = storeFragment?.labels || [];
           if (labels.length === 0) return null;
 
+          // Puzzle type colors: CLARIFY=Blue, EXPAND=Orange, REFINE=Purple
+          const PUZZLE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+            CLARIFY: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
+            EXPAND: { bg: '#FFEDD5', text: '#9A3412', border: '#F97316' },
+            REFINE: { bg: '#F3E8FF', text: '#6B21A8', border: '#9333EA' },
+          };
+
           return (
             <div className="mt-2 flex flex-wrap gap-1">
-              {labels.map((puzzleId, idx) => {
+              {labels.map((puzzleId) => {
                 const puzzle = contextStore.getState().puzzles.find(p => p.id === puzzleId);
                 if (!puzzle) return null;
 
-                const questionPreview = puzzle.centralQuestion?.slice(0, 20) || 'Puzzle';
-                const hue = (idx * 137.5) % 360;
+                const puzzleType = puzzle.type || 'CLARIFY';
+                const colors = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
 
                 return (
                   <span
                     key={puzzleId}
-                    className="px-2 py-0.5 text-xs rounded-full"
+                    className="w-3 h-3 rounded-full border-2"
                     style={{
-                      backgroundColor: `hsl(${hue}, 70%, 85%)`,
-                      color: `hsl(${hue}, 70%, 30%)`
+                      backgroundColor: colors.bg,
+                      borderColor: colors.border,
                     }}
-                    title={puzzle.centralQuestion}
-                  >
-                    📌 {questionPreview}{puzzle.centralQuestion && puzzle.centralQuestion.length > 20 ? '...' : ''}
-                  </span>
+                    title={`${puzzleType}: ${puzzle.centralQuestion}`}
+                  />
                 );
               })}
             </div>

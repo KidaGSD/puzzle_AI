@@ -112,7 +112,11 @@ const buildQuadrantInput = (
   central_question: centralQuestion,
   process_aim: input.process_aim,
   anchors,
-  relevant_fragments: input.fragments_summary.slice(0, 5),
+  // Pass fragments with title for AI to reference
+  relevant_fragments: input.fragments_summary.slice(0, 5).map(f => ({
+    ...f,
+    title: f.title || f.summary?.slice(0, 30) || "Untitled",
+  })),
   existing_pieces: [],
   preference_hints: buildPreferenceHints(input),
   requested_count: DEFAULT_PIECES_PER_QUADRANT,

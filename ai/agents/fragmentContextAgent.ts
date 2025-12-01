@@ -16,7 +16,8 @@ export interface FragmentContextInput {
 export interface FragmentContextOutput {
   fragments: Array<{
     id: string;
-    summary: string;
+    title: string;    // Short title (2-5 words)
+    summary: string;  // 1-2 sentence summary
     tags: string[];
   }>;
   clusters?: Cluster[];
@@ -25,12 +26,15 @@ export interface FragmentContextOutput {
 const fallbackSummarize = (f: Fragment) => {
   const text = f.content || "";
   const summary = text.length > 80 ? `${text.slice(0, 77)}...` : text || "Untitled fragment";
+  // Generate a short title from first few words
+  const words = text.trim().split(/\s+/).slice(0, 4);
+  const title = words.length > 0 ? words.join(" ") : "Untitled";
   const tags = text
     .toLowerCase()
     .split(/\W+/)
     .filter(Boolean)
     .slice(0, 3);
-  return { summary, tags: tags.length ? tags : ["idea"] };
+  return { title, summary, tags: tags.length ? tags : ["idea"] };
 };
 
 const buildPrompt = (input: FragmentContextInput) => {
@@ -43,9 +47,14 @@ Process Aim: ${input.processAim}
 Fragments:
 ${items}
 
+For each fragment, generate:
+1. title: A short, memorable title (2-5 words) that captures the essence
+2. summary: A 1-2 sentence summary of the content
+3. tags: 2-4 relevant keywords
+
 Return JSON with:
 {
-  "fragments": [{ "id": string, "summary": string, "tags": [string] }],
+  "fragments": [{ "id": string, "title": string, "summary": string, "tags": [string] }],
   "clusters": [{ "id": string, "fragmentIds": [string], "theme": string }]
 }
 Only include clusters if clear themes exist.`;

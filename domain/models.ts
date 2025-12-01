@@ -204,8 +204,10 @@ export type SaturationLevel = 'high' | 'medium' | 'low';
 export interface FragmentSummary {
   id: UUID;
   type: FragmentType;
-  summary: string;
+  title: string;      // Short title (2-5 words)
+  summary: string;    // 1-2 sentence summary
   tags?: string[];
+  imageUrl?: string;  // If image fragment
 }
 
 /**
@@ -232,7 +234,11 @@ export interface QuadrantAgentPiece {
   text: string;              // Statement/insight (陈述式, no question marks)
   priority: PiecePriority;   // 1-6, determines position and color
   saturation_level: SaturationLevel;
-  fragment_id?: string;      // Optional link to source fragment
+  // Source fragment reference (for summary popup)
+  fragment_id?: string;       // Links to canvas fragment
+  fragment_title?: string;    // Original title from canvas
+  fragment_summary?: string;  // How this fragment influenced the insight
+  image_url?: string;         // If derived from image fragment
 }
 
 /**
