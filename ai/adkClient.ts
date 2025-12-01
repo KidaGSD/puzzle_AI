@@ -7,11 +7,12 @@ export interface LLMClient {
 
 // Vite/browser-safe env resolution
 const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || {};
+// Use Gemini 2.5 Pro for better reasoning, or 3.0 preview via env override
 const defaultModel =
   env.VITE_GEMINI_MODEL ||
   env.GEMINI_MODEL ||
   (typeof process !== "undefined" ? process.env.GEMINI_MODEL : "") ||
-  "gemini-2.0-flash";
+  "gemini-2.5-pro";  // Upgraded from gemini-2.0-flash for better quality
 const apiKey =
   env.VITE_GEMINI_API_KEY ||
   env.GEMINI_API_KEY ||

@@ -27,8 +27,22 @@ const INITIAL_LEVERS: Lever[] = [
   { id: 'L3', name: 'Human vs Machine', color: PALETTE.purple },
 ];
 
-// No mock puzzles - puzzles are created through Mascot AI interaction
-const INITIAL_PUZZLES: Puzzle[] = [];
+// Load initial puzzles from contextStore (or empty if none)
+const getInitialPuzzles = (): Puzzle[] => {
+  const domainPuzzles = contextStore.getState().puzzles;
+  if (domainPuzzles.length > 0) {
+    console.log('[HomeCanvasView] Loading', domainPuzzles.length, 'puzzles from contextStore');
+    return domainPuzzles.map(p => ({
+      id: p.id,
+      leverId: 'L1', // Default lever - could be improved by storing lever association
+      title: p.centralQuestion,
+      type: p.type?.toLowerCase() as 'clarify' | 'expand' | 'refine',
+      description: '',
+    }));
+  }
+  console.log('[HomeCanvasView] No puzzles in contextStore, starting empty');
+  return [];
+};
 
 // Convert domain fragment to UI fragment format
 const fromDomainFragment = (f: DomainFragment): FragmentData => ({
@@ -113,7 +127,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   const [activeTool, setActiveTool] = useState<ToolType>(ToolType.POINTER);
   const [fragments, setFragments] = useState<FragmentData[]>(getInitialFragments);
   const [levers, setLevers] = useState<Lever[]>(INITIAL_LEVERS);
-  const [puzzles, setPuzzles] = useState<Puzzle[]>(INITIAL_PUZZLES);
+  const [puzzles, setPuzzles] = useState<Puzzle[]>(getInitialPuzzles);
   const [activeLeverId, setActiveLeverId] = useState<string | null>(null);
   const [projectTitle] = useState(contextStore.getState().project.title);
   const [aim, setAim] = useState(contextStore.getState().project.processAim);

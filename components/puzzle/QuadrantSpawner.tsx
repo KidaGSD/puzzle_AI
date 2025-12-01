@@ -137,7 +137,8 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
     const dragYHistory = useRef<{ y: number, time: number }[]>([]);
     const lastShakeTime = useRef(0);
     const [isShaking, setIsShaking] = useState(false);
-    const [currentCategory, setCurrentCategory] = useState<PieceCategoryType>('clarify');
+    // Get puzzleType from session state (not local state!) for piece category
+    const sessionPuzzleType = sessionState?.puzzle_type?.toLowerCase() as PieceCategoryType || 'clarify';
     const [pendingPieceId, setPendingPieceId] = useState<string | null>(null);
     const [pendingContent, setPendingContent] = useState<{ title: string; content: string } | null>(null);
     const [isLoadingContent, setIsLoadingContent] = useState(false);
@@ -188,12 +189,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
         };
     }, [currentShape]);
 
-    const getNextCategory = (): PieceCategoryType => {
-        const categories: PieceCategoryType[] = ['clarify', 'expand', 'refine'];
-        const currentIndex = categories.indexOf(currentCategory);
-        const nextIndex = (currentIndex + 1) % categories.length;
-        return categories[nextIndex];
-    };
+    // NOTE: category now comes from session puzzleType, not cycled locally
 
     const requestAIContent = useCallback((pieceId: string, position: { x: number; y: number }) => {
         const activePuzzleId = puzzleId || currentPuzzleId;
@@ -325,7 +321,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
         });
 
         if (valid && pendingPieceId) {
-            const category = currentCategory;
+            // Use session's puzzleType as the category (not local cycling)
 
             // Use pre-generated piece content if available
             const hasPreGenerated = preGeneratedPiece && preGeneratedPiece.text;
@@ -346,7 +342,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 text: title,
                 title,
                 content,
-                category,
+                category: sessionPuzzleType,
                 source: 'ai',
                 priority: piecePriority as PiecePriority,
                 // Pass fragment fields from pre-generated piece for summary popup
@@ -365,7 +361,6 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 requestAIContent(pendingPieceId, { x: gridX, y: gridY });
             }
 
-            setCurrentCategory(getNextCategory());
             setDragKey(k => k + 1);
 
             // Get next pre-generated piece or use random label
@@ -494,13 +489,13 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                         </span>
                     </div>
 
-                    {/* Category indicator */}
+                    {/* Session puzzleType indicator */}
                     <div
                         className="absolute -right-1 -top-1 w-5 h-5 rounded-full bg-white shadow-sm border border-gray-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                        title={`Next: ${currentCategory}`}
+                        title={`Session: ${sessionPuzzleType.toUpperCase()}`}
                     >
                         <span className="text-[8px] font-bold text-gray-500 uppercase">
-                            {currentCategory.charAt(0)}
+                            {sessionPuzzleType.charAt(0)}
                         </span>
                     </div>
 

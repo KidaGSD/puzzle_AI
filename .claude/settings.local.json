@@ -17,7 +17,8 @@
       "Bash(xargs kill -9)",
       "WebFetch(domain:google.github.io)",
       "WebSearch",
-      "Bash(timeout 30 npx tsc:*)"
+      "Bash(timeout 30 npx tsc:*)",
+      "WebFetch(domain:ai.google.dev)"
     ],
     "deny": [],
     "ask": []

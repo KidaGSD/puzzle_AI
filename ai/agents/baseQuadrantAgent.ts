@@ -158,9 +158,15 @@ export const buildQuadrantPrompt = (input: QuadrantAgentInput): string => {
   // Build fragment context with IDs for referencing
   let fragmentSection = "";
   if (input.relevant_fragments.length > 0) {
-    fragmentSection = `\nRelevant canvas fragments (you can reference these in your output):\n${input.relevant_fragments
+    fragmentSection = `\n=== CANVAS FRAGMENTS (cite these in your output!) ===\n${input.relevant_fragments
       .slice(0, 5)
-      .map((f, i) => `  ${i + 1}. ID: "${f.id}" | Title: "${f.title}" | Summary: "${f.summary}"${f.imageUrl ? " | [IMAGE]" : ""} [${f.tags?.join(", ") || "no tags"}]`)
+      .map((f, i) => {
+        const isImage = f.imageUrl ? true : false;
+        if (isImage) {
+          return `  ${i + 1}. [IMAGE] ID: "${f.id}" | Title: "${f.title}" | Description: "${f.summary}" | ImageURL: "${f.imageUrl}"`;
+        }
+        return `  ${i + 1}. ID: "${f.id}" | Title: "${f.title}" | Summary: "${f.summary}" [${f.tags?.join(", ") || "no tags"}]`;
+      })
       .join("\n")}`;
   }
 
@@ -216,20 +222,32 @@ Return ONLY valid JSON:
       "text": "Your short statement here",
       "priority": 1,
       "saturation_level": "high",
-      "fragment_id": "optional-id-from-above",
-      "fragment_title": "optional-title-from-above",
-      "fragment_summary": "1 sentence: how this fragment influenced this insight"
+      "fragment_id": "frag-123",
+      "fragment_title": "Brand Color Analysis",
+      "fragment_summary": "The warm earth tones in this fragment suggest organic, grounded aesthetics",
+      "image_url": "https://example.com/image.jpg"
     },
-    { "text": "Another insight", "priority": 3, "saturation_level": "medium" },
+    {
+      "text": "Another insight",
+      "priority": 3,
+      "saturation_level": "medium",
+      "fragment_id": "frag-456",
+      "fragment_title": "Typography Reference",
+      "fragment_summary": "The serif fonts in this fragment convey traditional elegance"
+    },
     ...
   ]
 }
 
-IMPORTANT:
-- saturation_level: "high" for priority 1-2, "medium" for 3-4, "low" for 5-6
-- If an insight is derived from a canvas fragment, include fragment_id, fragment_title, fragment_summary
-- fragment_summary should explain the connection (e.g., "The warm earth tones in this image suggest...")
-- Not all pieces need fragment references - only include when there's a clear connection`;
+CRITICAL - FRAGMENT CITATION REQUIREMENTS:
+1. saturation_level: "high" for priority 1-2, "medium" for 3-4, "low" for 5-6
+2. You MUST cite source fragments when your insight is influenced by them:
+   - fragment_id: Copy the exact ID from the fragments list above
+   - fragment_title: Copy the exact title from the fragments list
+   - fragment_summary: 1 sentence explaining HOW this fragment influenced your insight
+3. For IMAGE fragments, also include image_url with the URL from the fragment
+4. If no specific fragment influenced an insight, you may omit the fragment fields
+5. At least 50% of your pieces should cite relevant fragments when fragments are provided`;
 };
 
 // ========== Run Agent ==========

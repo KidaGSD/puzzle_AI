@@ -16,6 +16,8 @@ export interface MascotSuggestInput {
   clusters: Array<{ id: string; theme: string; fragmentCount: number }>;
   puzzleSummaries: Array<{ id: string; title: string; oneLine: string }>;
   preferenceHints?: string;
+  // Fragment details for insightful reasoning
+  fragments?: Array<{ id: string; title: string; summary: string; tags?: string[] }>;
 }
 
 export interface MascotReflectionInput {
@@ -60,6 +62,12 @@ Return JSON:
 
 const buildSuggestPrompt = (input: MascotSuggestInput) => {
   const clusters = input.clusters.map(c => `${c.theme} (${c.fragmentCount})`).join(" | ");
+
+  // Build detailed fragment context for insightful reasoning
+  const fragmentDetails = input.fragments?.slice(0, 5).map((f, i) =>
+    `  ${i + 1}. "${f.title || 'Untitled'}" - ${f.summary || 'No summary'} [${f.tags?.join(", ") || "no tags"}]`
+  ).join("\n") || "No fragments available";
+
   return `You are the Mascot Agent (AI-Suggested Puzzle).
 
 CONTEXT:
@@ -68,13 +76,28 @@ CONTEXT:
 - Previous puzzles: ${input.puzzleSummaries.map(p => p.oneLine).join(" | ") || "none"}
 - Preference hints: ${input.preferenceHints || "none"}
 
+DETAILED FRAGMENTS ON CANVAS:
+${fragmentDetails}
+
 TASK:
-Analyze the context and suggest a puzzle that would help the user make progress.
+Analyze the context and SPECIFIC fragments to suggest a meaningful puzzle.
 
 PUZZLE TYPE SELECTION:
 - CLARIFY: When concepts are vague or need definition
 - EXPAND: When exploration is thin or needs new angles
 - REFINE: When there are many ideas but need to converge
+
+CRITICAL - RATIONALE REQUIREMENTS:
+Your rationale MUST:
+1. Reference SPECIFIC fragments by name (e.g., "Your 'Brand Colors' fragment...")
+2. Explain WHY this puzzle type fits the current situation
+3. Be actionable and insightful, not generic
+
+Example good rationale:
+"Your 'Matcha Brand Colors' and 'Analog Warmth Reference' fragments both emphasize earthy, natural tones. A CLARIFY puzzle would help define exactly what 'warm' means for this project."
+
+Example bad rationale (DON'T DO THIS):
+"Starting with clarification to establish foundations." (Too generic!)
 
 If no obvious gap or need, return: { "shouldSuggest": false }
 
@@ -84,7 +107,7 @@ Otherwise return:
   "centralQuestion": "A focused question (1-2 sentences)",
   "puzzleType": "CLARIFY" | "EXPAND" | "REFINE",
   "primaryModes": ["FORM"|"MOTION"|"EXPRESSION"|"FUNCTION"],
-  "rationale": "Why this puzzle now (1-2 sentences)"
+  "rationale": "Specific, fragment-citing explanation (2-3 sentences)"
 }`;
 };
 
@@ -136,23 +159,27 @@ export const runMascotSuggest = async (
     return parsed;
   } catch (err) {
     console.error("[mascotAgent] runMascotSuggest failed:", err);
-    // Intelligent fallback based on context
+    // Intelligent fallback based on context - try to cite fragments
     const clusterCount = input.clusters.length;
     const puzzleCount = input.puzzleSummaries.length;
+    const fragmentCount = input.fragments?.length || 0;
+
+    // Get first fragment title for more specific fallback
+    const firstFragmentTitle = input.fragments?.[0]?.title || "your ideas";
 
     // Decide puzzle type based on context
     let puzzleType: PuzzleType = "CLARIFY";
     let centralQuestion = "What does this project's core identity feel like?";
-    let rationale = "Starting with clarification to establish foundations.";
+    let rationale = `Looking at "${firstFragmentTitle}" and your other fragments, starting with clarification will help establish clear foundations.`;
 
     if (clusterCount > 3) {
       puzzleType = "REFINE";
       centralQuestion = "Which direction should we prioritize from these ideas?";
-      rationale = "Multiple clusters suggest it's time to converge.";
-    } else if (puzzleCount === 0) {
+      rationale = `You have ${clusterCount} distinct clusters of ideas. Time to converge and prioritize the strongest direction.`;
+    } else if (puzzleCount === 0 && fragmentCount > 2) {
       puzzleType = "EXPAND";
       centralQuestion = "What possibilities haven't we considered yet?";
-      rationale = "No previous puzzles - let's explore the space first.";
+      rationale = `Your fragments like "${firstFragmentTitle}" provide a starting point, but let's explore more angles before committing.`;
     }
 
     return {

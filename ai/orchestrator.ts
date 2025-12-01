@@ -114,12 +114,21 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       // Notify UI with the proposal (using module-level callback)
       notifyMascotProposal(proposal);
     } else if (payload.action === "suggest_puzzle") {
+      // Pass fragment details for insightful reasoning
+      const fragmentDetails = state.fragments.slice(0, 5).map(f => ({
+        id: f.id,
+        title: f.title || f.summary?.slice(0, 30) || "Untitled",
+        summary: f.summary || f.content.slice(0, 100),
+        tags: f.tags,
+      }));
+
       const suggestion = await runMascotSuggest(
         {
           processAim: state.project.processAim,
           clusters: state.clusters.map(c => ({ id: c.id, theme: c.theme, fragmentCount: c.fragmentIds.length })),
           puzzleSummaries: state.puzzleSummaries.slice(0, 4).map(s => ({ id: s.puzzleId, title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
           preferenceHints: "",
+          fragments: fragmentDetails,
         },
         client,
       );
