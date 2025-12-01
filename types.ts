@@ -90,12 +90,22 @@ export interface Piece {
   position: Position; // Grid coordinates
   cells: Position[]; // Relative coordinates of cells occupying the piece
 
-  // Main content field - the statement shown on the piece (陈述式)
+  // ═══════════════════════════════════════════════════════════
+  // PIECE TITLE (shown ON the piece - 2-5 words, 陈述式)
+  // ═══════════════════════════════════════════════════════════
   text: string;               // The STATEMENT on the piece (AI-generated, 陈述式)
   userAnnotation?: string;    // User's SHORT note
 
   // Priority for color saturation and positioning
   priority?: PiecePriority;   // 1-6, determines color saturation
+
+  // ═══════════════════════════════════════════════════════════
+  // SOURCE FRAGMENT INFO (for summary popup - NOT the title!)
+  // ═══════════════════════════════════════════════════════════
+  fragmentId?: string;        // Reference to canvas fragment
+  fragmentTitle?: string;     // Original title from canvas (e.g., "Brand Color Analysis")
+  fragmentSummary?: string;   // AI summary of fragment (1-2 sentences)
+  imageUrl?: string;          // If fragment is an image
 
   // @deprecated - use text instead for display
   title?: string;
@@ -105,8 +115,6 @@ export interface Piece {
   // @deprecated - pieces inherit type from puzzle session
   category?: PieceCategoryType;
   source?: PieceSourceType;
-  imageUrl?: string;
-  fragmentId?: string;
 }
 
 export interface DragItem {

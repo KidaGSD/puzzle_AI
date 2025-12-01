@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CELL_SIZE, ALL_SHAPES } from '../../constants/puzzleGrid';
+import { CELL_SIZE, ALL_SHAPES, getShapeForText } from '../../constants/puzzleGrid';
 import { QuadrantType, Position, PieceCategoryType, PiecePriority } from '../../types';
 import { useGameStore } from '../../store/puzzleSessionStore';
 import { usePuzzleSessionStateStore } from '../../store/puzzleSessionStateStore';
@@ -112,15 +112,24 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
     const preGeneratedPiece = useMemo(() => getNextPiece(quadrant), [quadrant, dragKey, sessionState]);
     const [currentLabel, setCurrentLabel] = useState(preGeneratedPiece?.text || randomLabel(quadrant));
     const [currentPriority, setCurrentPriority] = useState<PiecePriority>(preGeneratedPiece?.priority || 3);
-    const [currentShape, setCurrentShape] = useState(shapePreset || getRandomShape());
+    // Select initial shape based on pre-generated piece text length (if available)
+    const [currentShape, setCurrentShape] = useState(() => {
+        if (shapePreset) return shapePreset;
+        if (preGeneratedPiece?.text) return getShapeForText(preGeneratedPiece.text);
+        return getRandomShape();
+    });
 
-    // Update label when pre-generated piece changes
+    // Update label and shape when pre-generated piece changes
     useEffect(() => {
         if (preGeneratedPiece) {
             setCurrentLabel(preGeneratedPiece.text);
             setCurrentPriority(preGeneratedPiece.priority);
+            // Select shape based on text length (2-3 words = tall, 4-6 words = wide)
+            if (!shapePreset) {
+                setCurrentShape(getShapeForText(preGeneratedPiece.text));
+            }
         }
-    }, [preGeneratedPiece]);
+    }, [preGeneratedPiece, shapePreset]);
 
     const buttonRef = useRef<HTMLDivElement>(null);
     const [dragStartPos, setDragStartPos] = useState<{ x: number, y: number } | null>(null);
@@ -359,13 +368,17 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             if (nextPiece) {
                 setCurrentLabel(nextPiece.text);
                 setCurrentPriority(nextPiece.priority);
+                // Select shape based on text length for next piece
+                if (!shapePreset) {
+                    setCurrentShape(getShapeForText(nextPiece.text));
+                }
             } else {
                 setCurrentLabel(randomLabel(quadrant));
                 setCurrentPriority(3);
-            }
-
-            if (!shapePreset) {
-                setCurrentShape(getRandomShape());
+                // Fall back to random shape when no pre-generated piece
+                if (!shapePreset) {
+                    setCurrentShape(getRandomShape());
+                }
             }
         }
 
@@ -404,16 +417,21 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                 </div>
                             </div>
                             <div className="p-4">
-                                {isLoadingContent ? (
+                                {preGeneratedPiece ? (
+                                    <div>
+                                        <p className="text-gray-300 text-sm leading-relaxed mb-2">
+                                            {preGeneratedPiece.text}
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-green-400 text-[10px] uppercase font-medium">Ready to place</span>
+                                            <span className="text-gray-500 text-[10px]">· {quadrant.toUpperCase()}</span>
+                                        </div>
+                                    </div>
+                                ) : isLoadingContent ? (
                                     <div className="flex items-center gap-3">
                                         <div className="animate-spin w-4 h-4 border-2 border-gray-500 border-t-white rounded-full" />
-                                        <span className="text-gray-400 text-sm">AI is thinking...</span>
+                                        <span className="text-gray-400 text-sm">Generating content...</span>
                                     </div>
-                                ) : preGeneratedPiece ? (
-                                    <p className="text-gray-300 text-sm leading-relaxed">
-                                        <span className="text-green-400 text-xs uppercase mr-2">Pre-generated</span>
-                                        Drop to place this insight
-                                    </p>
                                 ) : pendingContent?.content ? (
                                     <p className="text-gray-300 text-sm leading-relaxed">{pendingContent.content}</p>
                                 ) : (
@@ -536,15 +554,29 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                     />
                                 </svg>
 
-                                {/* Label overlay */}
+                                {/* Label overlay - ALWAYS HORIZONTAL */}
                                 {isValid && (
                                     <motion.div
                                         key={currentLabel}
                                         initial={{ opacity: 0, y: 5 }}
                                         animate={{ opacity: 1, y: 0 }}
-                                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                        className="absolute inset-0 flex items-center justify-center pointer-events-none p-2"
                                     >
-                                        <span className="text-white font-bold text-[11px] uppercase tracking-wider text-center drop-shadow-lg">
+                                        <span
+                                            className="text-white font-bold uppercase tracking-wider text-center drop-shadow-lg"
+                                            style={{
+                                                // Adaptive font size based on shape
+                                                fontSize: shapeBounds.width > shapeBounds.height ? '11px' : '8px',
+                                                lineHeight: shapeBounds.width < shapeBounds.height ? 1.1 : 1.2,
+                                                maxWidth: `${shapeBounds.width * 0.9}px`,
+                                                maxHeight: `${shapeBounds.height * 0.9}px`,
+                                                overflow: 'hidden',
+                                                display: '-webkit-box',
+                                                WebkitLineClamp: shapeBounds.width < shapeBounds.height ? 4 : 2,
+                                                WebkitBoxOrient: 'vertical',
+                                                wordBreak: 'break-word',
+                                            }}
+                                        >
                                             {currentLabel}
                                         </span>
                                     </motion.div>

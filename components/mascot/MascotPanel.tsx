@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { MascotProposal } from '../../ai/agents/mascotAgent'
 import { eventBus } from '../../store/runtime'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Sparkles, MessageCircle, ArrowRight } from 'lucide-react'
+import { X, Sparkles, MessageCircle, ArrowRight, Shuffle } from 'lucide-react'
 
 interface MascotPanelProps {
   isOpen: boolean
@@ -71,6 +71,14 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
         action: 'start_from_my_question',
         userQuestion: userQuestion.trim()
       })
+    }, 800)
+  }
+
+  const handleShuffleClick = () => {
+    // Request a new puzzle suggestion from AI
+    setView('analyzing')
+    setTimeout(() => {
+      eventBus.emitType('MASCOT_CLICKED', { action: 'suggest_puzzle' })
     }, 800)
   }
 
@@ -225,16 +233,17 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
 
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={onClose}
-                      className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                      onClick={handleShuffleClick}
+                      className="py-2.5 px-4 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                     >
-                      Not now
+                      <Shuffle size={16} />
+                      Shuffle
                     </button>
                     <button
                       onClick={() => onStartPuzzle(proposal)}
                       className="py-2.5 px-4 rounded-xl bg-black text-white font-medium hover:bg-gray-800 transition-colors shadow-lg shadow-purple-500/20"
                     >
-                      Start Puzzle
+                      Create Puzzle
                     </button>
                   </div>
                 </div>

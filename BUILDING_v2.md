@@ -1,7 +1,7 @@
 # BUILDING v2 - Puzzle AI Implementation Guide
 
 **Date**: 2025-12-01
-**Version**: 2.1 (Corrected Puzzle Session Model)
+**Version**: 2.5 (Implementation Complete)
 **Reference Docs**: `SystemDoc.md`, `AgentAndContext.md`
 
 ---
@@ -88,8 +88,8 @@
 │  ════════════════════════════════════════════════            │
 │                                                               │
 │  ┌─────────┐                           ┌─────────┐           │
-│  │ FORM    │                           │ MOTION  │           │
-│  │ HUB     │←──────────────────────────│ HUB     │           │
+│  │ FORM    │← Anchor: What             │ MOTION  │           │
+│  │ HUB     │                           │ HUB     │← Anchor: What           │
 │  │  [+]    │                           │  [+]    │           │
 │  └─────────┘                           └─────────┘           │
 │                                                               │
@@ -101,14 +101,10 @@
 │                    │ │ STARTING    │ │ ← Anchor: Why         │
 │                    │ │ (Why)       │ │                       │
 │                    │ └─────────────┘ │                       │
-│                    │ ┌─────────────┐ │                       │
-│                    │ │ SOLUTION    │ │ ← Anchor: What        │
-│                    │ │ (What)      │ │                       │
-│                    │ └─────────────┘ │                       │
 │                    └─────────────────┘                       │
 │                                                               │
 │  ┌─────────┐                           ┌─────────┐           │
-│  │EXPRESS. │                           │FUNCTION │           │
+│  │EXPRESS. │← Anchor: What             │FUNCTION │← Anchor: What  │
 │  │ HUB     │                           │ HUB     │           │
 │  │  [+]    │                           │  [+]    │           │
 │  └─────────┘                           └─────────┘           │
@@ -119,25 +115,42 @@
 
 **Key difference from v1**: No [C][E][R] buttons per hub. The entire session IS one type. Each hub just has [+] to generate pieces aligned to that session's operation.
 
-### 2.4 Creating Puzzle Pieces
+### 2.4 Creating Puzzle Pieces (PRE-GENERATION MODEL)
 
-**User Action**:
-1. User clicks [+] in a Hub (e.g., FORM hub)
-2. AI generates 1-3 suggested pieces appropriate to:
-   - The **session type** (Clarify/Expand/Refine)
-   - The **quadrant mode** (FORM/MOTION/EXPRESSION/FUNCTION)
-3. Each piece shows a SHORT QUESTION/PROMPT like:
-   - Clarify FORM: "Should the design feel more geometric or organic?"
-   - Expand FORM: "If this interface were an object, what would it feel like?"
-   - Refine FORM: "From everything, what 2 visual elements *must* remain?"
-4. User DRAGS a piece onto the board
-5. User can TYPE an annotation (their answer) inside the piece
-6. User can ATTACH piece to an Anchor (Starting or Solution)
+**Session Initialization**:
+When a puzzle session is created, the multi-agent system **PRE-GENERATES** all pieces:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  PUZZLE SESSION CREATED                                       │
+│  ════════════════════════════════════════════════            │
+│                                                               │
+│  1. PuzzleSessionAgent receives session context               │
+│  2. Dispatches to 4 QuadrantAgents in parallel:              │
+│     - FormAgent → generates 6-8 FORM pieces                  │
+│     - MotionAgent → generates 6-8 MOTION pieces              │
+│     - ExpressionAgent → generates 6-8 EXPRESSION pieces      │
+│     - FunctionAgent → generates 6-8 FUNCTION pieces          │
+│  3. Each piece has:                                          │
+│     - title (2-5 words, 陈述式 statement)                    │
+│     - priority (1-6, determines color saturation)            │
+│     - sourceFragmentId (optional, links to canvas fragment)  │
+│  4. Pieces stored in puzzleSessionStateStore                 │
+│  5. User drags from hub → piece is ALREADY READY             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**User Action** (pieces already pre-generated):
+1. User drags from Hub (e.g., FORM hub)
+2. Piece content is **immediately visible** (no "AI is thinking...")
+3. User places piece on board
+4. User can TYPE an annotation (their answer) inside the piece
+5. User can ATTACH piece to an Anchor (Starting or Solution)
 
 **Piece Lifecycle**:
 ```
-SUGGESTED → PLACED → EDITED → CONNECTED
-                  ↘ DISCARDED
+PRE-GENERATED → DRAGGING → PLACED → EDITED → CONNECTED
+                        ↘ CANCELLED (not placed)
 ```
 
 ### 2.5 Ending a Puzzle
@@ -509,5 +522,401 @@ puzzle_AI/
 
 ---
 
-**Document Version**: 2.2 (Phases 1 & 2 Completed)
+## 9. UI/UX Refinements (Phase 2.5) - NEW
+
+### 9.1 Puzzle Piece Content Architecture
+
+**Current Issue**: Title on piece = Same as summary popup (redundant)
+
+**Required Architecture - TWO DISTINCT CONTENT AREAS**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. PIECE TITLE (shown ON the puzzle piece itself)              │
+│  ═══════════════════════════════════════════════════════════    │
+│                                                                  │
+│  • 2-5 words ONLY                                               │
+│  • 陈述式 (declarative statement), NOT a question               │
+│  • AI-generated insight relevant to quadrant + puzzle type      │
+│  • Examples:                                                     │
+│    - "WARM ANALOG TEXTURES"                                     │
+│    - "CALM TRANSITIONS"                                         │
+│    - "PLAYFUL APPROACHABILITY"                                  │
+│                                                                  │
+│  • Word count determines shape:                                 │
+│    - 2-3 words → Tall shapes (1×2, 2×3)                        │
+│    - 4-5 words → Wide shapes (3×1, 3×2)                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│  2. SUMMARY POPUP (top-right corner, on hover/long-press)       │
+│  ═══════════════════════════════════════════════════════════    │
+│                                                                  │
+│  • Shows SOURCE FRAGMENT information (where insight came from)  │
+│  • NOT the same as the piece title!                             │
+│                                                                  │
+│  Content:                                                        │
+│  ┌───────────────────────────────────────────────────────┐      │
+│  │  [Title Bar]  "Warm Analog Textures"                  │      │
+│  ├───────────────────────────────────────────────────────┤      │
+│  │  [Source Fragment Info]                               │      │
+│  │  • If text fragment: Original text excerpt            │      │
+│  │  • If image fragment: Image thumbnail + AI summary    │      │
+│  │  • Fragment title from canvas                         │      │
+│  ├───────────────────────────────────────────────────────┤      │
+│  │  [Metadata]                                           │      │
+│  │  FORM · CLARIFY · AI GENERATED · P3                   │      │
+│  └───────────────────────────────────────────────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Data Model Update** (types.ts):
+```typescript
+interface Piece {
+  // ═══════════════════════════════════════════════════════════
+  // PIECE TITLE (shown ON the piece - 2-5 words)
+  // ═══════════════════════════════════════════════════════════
+  text: string;              // "WARM ANALOG TEXTURES" (陈述式)
+
+  // ═══════════════════════════════════════════════════════════
+  // SOURCE FRAGMENT INFO (for summary popup - NOT the title!)
+  // ═══════════════════════════════════════════════════════════
+  fragmentId?: string;       // Reference to canvas fragment
+  fragmentTitle?: string;    // "Brand Color Palette Analysis"
+  fragmentSummary?: string;  // "The matcha brand uses warm earth tones..."
+  imageUrl?: string;         // If fragment is an image
+
+  // ═══════════════════════════════════════════════════════════
+  // METADATA
+  // ═══════════════════════════════════════════════════════════
+  priority: PiecePriority;   // 1-6
+  quadrant: QuadrantType;    // form | motion | expression | function
+  source: PieceSourceType;   // ai | user | ai_edited
+}
+```
+
+### 9.2 Title Length → Shape Assignment
+
+| Word Count | Shape Type | Examples |
+|------------|------------|----------|
+| 2-3 words  | Tall/Vertical | SHAPE_6 (1×2), SHAPE_7 (2×3) |
+| 4-5 words  | Wide/Horizontal | SHAPE_5 (3×1), SHAPE_1 (3×2) |
+| 6+ words   | Large/Square | SHAPE_3 (2×2), SHAPE_4 (3×2) |
+
+**Status**: ✅ COMPLETED (in `constants/puzzleGrid.ts`)
+
+### 9.3 Image Puzzle Pieces
+
+**Requirements**:
+1. User can drag image fragments from canvas to create image pieces
+2. Piece title = AI-generated summary of image (2-5 words)
+3. Summary popup = Shows image thumbnail + AI description
+
+**Implementation Tasks**:
+- [ ] FragmentCard: Add drag handler to create image piece
+- [ ] QuadrantSpawner: Accept image fragment drops
+- [ ] PuzzlePiece: Render image thumbnail inside piece shape
+- [ ] AI Agent: Generate title from image description
+
+### 9.4 Fragment UI Improvements
+
+**Current Issue**: Fragment cards don't show AI-summarized title
+
+**Required UI**:
+```
+┌──────────────────────────────────────────┐
+│ [AI Title: "Matcha Brand Colors"]  [✎] [×] │  ← Top bar with editable title
+├──────────────────────────────────────────┤
+│                                          │
+│         [Fragment Content]               │
+│         (Image or Text)                  │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+**Tasks**:
+- [ ] FragmentCard: Add title bar with AI summary
+- [ ] FragmentCard: Add edit button to modify title
+- [ ] AI: Auto-generate title for new fragments
+
+### 9.5 Mascot Puzzle Modal Changes
+
+**Current**:
+```
+[Not now]      [Start Puzzle]
+```
+
+**Required**:
+```
+[Shuffle]      [Create Puzzle]
+```
+
+**Tasks**:
+- [ ] MascotProposalOverlay: "Not now" → "Shuffle"
+- [ ] MascotProposalOverlay: "Start Puzzle" → "Create Puzzle"
+- [ ] Shuffle action: Request new puzzle suggestion from AI
+
+### 9.6 Puzzle Card Category Display
+
+**Current Issue**: Shows "FICTION" (mock data)
+
+**Required**: Show actual puzzle type: **CLARIFY** | **EXPAND** | **REFINE**
+
+**Tasks**:
+- [x] PuzzleCard: Use `puzzle.type` instead of mock category
+- [x] Styling: Category badge color matches type
+  - CLARIFY: Blue (#3B82F6)
+  - EXPAND: Orange (#F97316)
+  - REFINE: Purple (#9333EA)
+
+### 9.7 Text Display Fixes
+
+**Status**: ✅ COMPLETED
+- [x] Text always horizontal (no vertical writing mode)
+- [x] Long-press detection for summary popup
+- [x] Shape-to-text-length matching
+- [x] Pre-generated content in drag preview
+- [x] Removed "i" icon from pieces
+- [x] Priority-based colors
+
+---
+
+## 10. Implementation Priority (Updated)
+
+### P0 - Critical (Do First)
+1. ✅ Fix core data flow (Phase 1)
+2. ✅ Fix piece placement (Phase 2)
+3. ✅ Text always horizontal
+4. [ ] Summary popup shows fragment info (not title)
+5. [ ] Mascot modal button labels
+6. [ ] Puzzle card shows actual category
+
+### P1 - Important
+7. [ ] Fragment title bar with edit capability
+8. ✅ Shape assignment based on word count
+
+### P2 - Enhancement
+9. [ ] Image puzzle piece support
+10. [ ] Drag fragment to create piece
+11. [ ] AI image summarization
+
+---
+
+## 11. Files to Modify for UI/UX
+
+### Core Types
+- `types.ts` - Add fragmentTitle, fragmentSummary fields
+
+### Components
+- `components/puzzle/PuzzlePiece.tsx`
+  - ✅ Remove "i" icon
+  - ✅ Text always horizontal
+  - [ ] Show fragment info in summary (not title)
+  - [ ] Support image rendering in piece
+
+- `components/puzzle/QuadrantSpawner.tsx`
+  - ✅ Text always horizontal
+  - ✅ Shape-to-text matching
+  - [ ] Accept image fragment drops
+
+- `components/fragments/FragmentCard.tsx`
+  - [ ] Add title bar with AI summary
+  - [ ] Add edit button for title
+  - [ ] Add drag-to-puzzle support
+
+- `components/mascot/MascotProposalOverlay.tsx`
+  - [ ] "Shuffle" instead of "Not now"
+  - [ ] "Create Puzzle" instead of "Start Puzzle"
+
+- `components/puzzle/PuzzleCard.tsx`
+  - [ ] Show actual type (CLARIFY/EXPAND/REFINE)
+  - [ ] Remove mock "FICTION" category
+
+### Stores
+- `store/contextStore.ts` - Fragment title persistence
+- `store/puzzleSessionStore.ts` - Fragment reference in pieces
+
+---
+
+## 12. Testing Checklist (Updated)
+
+### Puzzle Piece Display
+- [x] Text is always horizontal (no vertical)
+- [x] Shape matches title word count (2-3 = tall, 4-5 = wide)
+- [x] Long-press shows summary popup
+- [x] Piece title shows 2-5 word insight (agent prompt updated)
+- [x] Summary popup shows source fragment info (not title)
+- [ ] Image pieces render correctly (not yet implemented)
+
+### Fragment Cards
+- [ ] AI-summarized title in top bar (not yet implemented)
+- [ ] Edit button to modify title (not yet implemented)
+- [ ] Can drag fragment to create puzzle piece (not yet implemented)
+
+### Mascot Modal
+- [x] Shows "Shuffle" button (left)
+- [x] Shows "Create Puzzle" button (right)
+
+### Puzzle Cards
+- [x] Shows CLARIFY/EXPAND/REFINE (not FICTION)
+- [x] Category badge color matches type
+
+---
+
+---
+
+## 13. Agent Architecture Refinements
+
+### 13.1 Current Agent Flow (Working)
+
+```
+PUZZLE_SESSION_STARTED event
+        ↓
+    Orchestrator
+        ↓
+    PuzzleSessionAgent
+        ↓
+    ┌─────────────────────────────────────┐
+    │  4 QuadrantAgents (parallel)        │
+    │  • FormAgent                        │
+    │  • MotionAgent                      │
+    │  • ExpressionAgent                  │
+    │  • FunctionAgent                    │
+    └─────────────────────────────────────┘
+        ↓
+    PUZZLE_SESSION_GENERATED event
+        ↓
+    puzzleSessionStateStore (pre-generated pieces)
+```
+
+### 13.2 Required Agent Output Format
+
+Each QuadrantAgent should return pieces with this structure:
+
+```typescript
+interface QuadrantAgentPiece {
+  // ═══════════════════════════════════════════════════════════
+  // REQUIRED: Piece Title (shown ON the piece)
+  // ═══════════════════════════════════════════════════════════
+  text: string;           // 2-5 words, 陈述式
+                          // e.g., "WARM ANALOG TEXTURES"
+
+  priority: 1 | 2 | 3 | 4 | 5 | 6;  // Determines color + position
+
+  // ═══════════════════════════════════════════════════════════
+  // OPTIONAL: Source Fragment Reference (for summary popup)
+  // ═══════════════════════════════════════════════════════════
+  sourceFragmentId?: string;    // Links to canvas fragment
+  sourceFragmentTitle?: string; // "Brand Color Palette"
+  sourceFragmentSummary?: string; // "Analysis of matcha brand colors..."
+  sourceImageUrl?: string;      // If derived from image fragment
+}
+```
+
+### 13.3 Agent Prompt Refinements
+
+**QuadrantAgent System Prompt Updates**:
+
+```
+You are generating puzzle pieces for the {MODE} quadrant.
+Puzzle Type: {PUZZLE_TYPE} (CLARIFY | EXPAND | REFINE)
+
+CRITICAL REQUIREMENTS:
+
+1. PIECE TITLE (text field):
+   - MUST be 2-5 words ONLY
+   - MUST be 陈述式 (declarative statement), NOT a question
+   - Examples:
+     ✓ "WARM ANALOG TEXTURES"
+     ✓ "CALM TRANSITIONS"
+     ✓ "PLAYFUL APPROACHABILITY"
+     ✗ "Should we use warm colors?" (NO - this is a question)
+     ✗ "The design should incorporate warm analog textures" (NO - too long)
+
+2. SOURCE FRAGMENT REFERENCE:
+   - If the insight is derived from a canvas fragment, include:
+     - sourceFragmentId: the fragment's ID
+     - sourceFragmentTitle: original title from canvas
+     - sourceFragmentSummary: 1-2 sentence explanation of how this
+       fragment influenced the insight
+   - If derived from an image fragment, also include:
+     - sourceImageUrl: the image URL
+
+3. PRIORITY ASSIGNMENT:
+   - P1-P2: Core insights, most relevant to central question
+   - P3-P4: Supporting insights, add depth
+   - P5-P6: Subtle/nuanced insights, for exploration
+
+4. WORD COUNT → SHAPE:
+   - 2-3 words: Will be placed on TALL shapes
+   - 4-5 words: Will be placed on WIDE shapes
+   - Mix your outputs to have variety in shapes
+```
+
+### 13.4 New Agent: FragmentSummaryAgent
+
+**Purpose**: Generate AI titles for canvas fragments (for the title bar UI)
+
+**Triggers**:
+- When a new fragment is added to canvas
+- When user requests title regeneration
+
+**Input**:
+```typescript
+{
+  fragmentId: string;
+  fragmentType: 'TEXT' | 'IMAGE';
+  content: string;        // Text content or image URL
+  existingTitle?: string; // User may have already set one
+}
+```
+
+**Output**:
+```typescript
+{
+  suggestedTitle: string; // 3-6 words, concise summary
+  confidence: number;     // 0-1, how confident the AI is
+}
+```
+
+**Example**:
+- Input: Image of matcha products with earthy colors
+- Output: `{ suggestedTitle: "Matcha Brand Earth Tones", confidence: 0.85 }`
+
+### 13.5 Agent File Updates Needed
+
+| File | Change |
+|------|--------|
+| `ai/agents/quadrantPieceAgent.ts` | Update prompt to require 2-5 word titles |
+| `ai/agents/quadrantPieceAgent.ts` | Add source fragment reference fields |
+| `ai/agents/fragmentSummaryAgent.ts` | NEW: Generate fragment titles |
+| `ai/orchestrator.ts` | Add handler for FRAGMENT_ADDED event |
+| `domain/models.ts` | Update QuadrantAgentPiece interface |
+
+---
+
+## 14. Summary of All Changes
+
+### Completed ✅
+- [x] Text always horizontal (no vertical)
+- [x] Shape-to-text-length matching
+- [x] Long-press for summary popup
+- [x] Pre-generated pieces in session store
+- [x] Removed "i" icon from pieces
+- [x] Priority-based colors
+- [x] Summary popup shows fragment info (not title) - `PuzzlePiece.tsx:336-392`
+- [x] Update types.ts with fragment fields - `types.ts:102-108`
+- [x] Mascot modal: "Shuffle" + "Create Puzzle" - `MascotPanel.tsx:234-248`
+- [x] Puzzle card: CLARIFY/EXPAND/REFINE category - `PuzzleDeck.tsx:15-52`
+- [x] Agent prompt updates for 2-5 word titles - `quadrantPieceAgent.ts:91-155`
+- [x] Source fragment reference in agent output - `quadrantPieceAgent.ts:32-57`
+
+### Not Started ⏳
+- [ ] Fragment title bar with edit (UI enhancement)
+- [ ] FragmentSummaryAgent (auto-generate fragment titles)
+- [ ] Image puzzle pieces (drag from canvas)
+
+---
+
+**Document Version**: 2.5 (Implementation Complete)
 **Last Updated**: 2025-12-01

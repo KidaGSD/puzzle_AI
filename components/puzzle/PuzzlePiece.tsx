@@ -82,11 +82,13 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isLongPressed, setIsLongPressed] = useState(false);
   const displayTitle = data.title || data.label || '';
   const [editText, setEditText] = useState(displayTitle);
   const controls = useAnimation();
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isValidPos, setIsValidPos] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
 
@@ -105,9 +107,9 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
     }
   }, [isEditing]);
 
-  // Show preview on hover (with delay) or during drag
+  // Show preview on hover (with delay), during drag, or on long-press
   useEffect(() => {
-    if (isDragging) {
+    if (isDragging || isLongPressed) {
       setShowPreview(true);
       return;
     }
@@ -117,7 +119,43 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
     } else {
       setShowPreview(false);
     }
-  }, [isDragging, isHovered, isEditing]);
+  }, [isDragging, isHovered, isEditing, isLongPressed]);
+
+  // Long-press handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    longPressTimerRef.current = setTimeout(() => {
+      setIsLongPressed(true);
+    }, 500); // 500ms for long-press
+  };
+
+  const handleMouseUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    // Keep preview open for a bit after release
+    if (isLongPressed) {
+      setTimeout(() => setIsLongPressed(false), 300);
+    }
+  };
+
+  const handleMouseLeaveOrCancel = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setIsLongPressed(false);
+  };
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   // Calculate bounding box
   const minX = Math.min(...data.cells.map(c => c.x));
@@ -166,6 +204,38 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
       y: (sumY / normalizedCells.length + 0.5) * CELL_SIZE,
     };
   }, [normalizedCells]);
+
+  // Calculate shape aspect ratio and text layout - ALWAYS HORIZONTAL
+  const textLayout = useMemo(() => {
+    const shapeWidth = maxX - minX + 1;
+    const shapeHeight = maxY - minY + 1;
+    const aspectRatio = shapeWidth / shapeHeight;
+
+    // Determine if shape is tall (vertical) or wide (horizontal)
+    const isTall = aspectRatio < 1;
+    const isWide = aspectRatio > 1.5;
+    const isSquare = aspectRatio >= 1 && aspectRatio <= 1.5;
+
+    // Adaptive text container - use full shape area
+    const containerWidth = width * 0.9;
+    const containerHeight = height * 0.85;
+
+    // Adaptive font size: smaller for tall shapes to fit more lines
+    const fontSize = isTall ? 8 : isWide ? 11 : 10;
+
+    // Line height: tighter for tall shapes
+    const lineHeight = isTall ? 1.1 : 1.2;
+
+    return {
+      isTall,
+      isWide,
+      isSquare,
+      containerWidth,
+      containerHeight,
+      fontSize,
+      lineHeight,
+    };
+  }, [maxX, minX, maxY, minY, width, height]);
 
   const handleDragStart = () => {
     setIsDragging(true);
@@ -232,7 +302,8 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
     }
   };
 
-  const hasContent = data.content && data.content.trim().length > 0;
+  // Show preview if piece has content, image, or just title
+  const hasContent = (data.content && data.content.trim().length > 0) || data.imageUrl || displayTitle;
 
   // Lighter color for fill
   const fillColor = isDragging && !isValidPos ? '#ef4444' : adjustedColor;
@@ -263,24 +334,61 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
                 </div>
               </div>
               <div className="p-4">
+                {/* Image display */}
                 {data.imageUrl && (
                   <div className="mb-3 rounded-lg overflow-hidden">
                     <img src={data.imageUrl} alt={displayTitle} className="w-full h-32 object-cover" />
                   </div>
                 )}
-                <p className="text-gray-300 text-sm leading-relaxed">{data.content}</p>
-                {data.category && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
-                      {data.category}
-                    </span>
-                    {data.source === 'ai' && (
-                      <span className="text-[10px] font-medium text-purple-400 uppercase tracking-wider">
-                        AI Generated
-                      </span>
+
+                {/* Source Fragment Section - This is the key distinction from title */}
+                {(data.fragmentTitle || data.fragmentSummary || data.fragmentId) ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14,2 14,8 20,8" />
+                      </svg>
+                      Source Fragment
+                    </div>
+                    {data.fragmentTitle && (
+                      <p className="text-gray-200 text-sm font-medium">{data.fragmentTitle}</p>
+                    )}
+                    {data.fragmentSummary ? (
+                      <p className="text-gray-400 text-sm leading-relaxed">{data.fragmentSummary}</p>
+                    ) : data.imageUrl ? (
+                      <p className="text-gray-400 text-sm italic">Visual reference from canvas</p>
+                    ) : (
+                      <p className="text-gray-500 text-xs italic">Fragment linked: {data.fragmentId}</p>
                     )}
                   </div>
+                ) : data.content ? (
+                  <p className="text-gray-300 text-sm leading-relaxed">{data.content}</p>
+                ) : (
+                  <p className="text-gray-500 text-sm italic">No source fragment linked</p>
                 )}
+
+                {/* Metadata footer */}
+                <div className="mt-3 pt-2 border-t border-gray-700/50 flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                    {data.quadrant}
+                  </span>
+                  {data.category && (
+                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                      · {data.category}
+                    </span>
+                  )}
+                  {data.source === 'ai' && (
+                    <span className="text-[10px] font-medium text-purple-400 uppercase tracking-wider">
+                      · AI Generated
+                    </span>
+                  )}
+                  {data.priority && (
+                    <span className="text-[10px] font-medium text-blue-400 uppercase tracking-wider">
+                      · P{data.priority}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>
@@ -299,7 +407,12 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        onMouseLeave={() => { setIsHovered(false); handleMouseLeaveOrCancel(); }}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onTouchStart={(e) => handleMouseDown(e as any)}
+        onTouchEnd={handleMouseUp}
+        onTouchCancel={handleMouseLeaveOrCancel}
         animate={controls}
         initial={{ x, y, scale: 0.9, opacity: 0 }}
         whileInView={{ scale: 1, opacity: 1 }}
@@ -372,26 +485,16 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
           )}
         </AnimatePresence>
 
-        {/* Content indicator */}
-        {hasContent && !isDragging && (
-          <div
-            className="absolute -top-1 -left-1 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shadow-md z-20"
-            title="Has content - hover to preview"
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-            </svg>
-          </div>
-        )}
+        {/* Content indicator - REMOVED: no longer showing "i" icon */}
 
-        {/* Title/Content Overlay */}
+        {/* Title/Content Overlay - Adaptive to shape dimensions */}
         <div
           className="absolute flex items-center justify-center pointer-events-none"
           style={{
-            left: centerOfMass.x - 40,
-            top: centerOfMass.y - 20,
-            width: 80,
-            height: 40,
+            left: centerOfMass.x - textLayout.containerWidth / 2,
+            top: centerOfMass.y - textLayout.containerHeight / 2,
+            width: textLayout.containerWidth,
+            height: textLayout.containerHeight,
           }}
         >
           {isEditing ? (
@@ -415,7 +518,20 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
               </div>
             </div>
           ) : displayTitle ? (
-            <span className="text-white font-bold text-[11px] uppercase tracking-wider text-center drop-shadow-lg leading-tight px-1">
+            <span
+              className="text-white font-bold uppercase tracking-wider text-center drop-shadow-lg px-1"
+              style={{
+                fontSize: `${textLayout.fontSize}px`,
+                lineHeight: textLayout.lineHeight,
+                maxWidth: `${textLayout.containerWidth}px`,
+                maxHeight: `${textLayout.containerHeight}px`,
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: textLayout.isTall ? 4 : 2,
+                WebkitBoxOrient: 'vertical',
+                wordBreak: 'break-word',
+              }}
+            >
               {displayTitle}
             </span>
           ) : (

@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Puzzle, Lever } from '../types';
-import { Gamepad2, ChevronRight, HelpCircle, GripHorizontal, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, HelpCircle, CheckCircle2, Target, Sparkles, Filter } from 'lucide-react';
 import { PuzzleSummary } from '../domain/models';
 
 interface PuzzleDeckProps {
@@ -11,6 +11,28 @@ interface PuzzleDeckProps {
   puzzleSummaries?: PuzzleSummary[];
   onSelectPuzzle: (puzzle: Puzzle) => void;
 }
+
+// Puzzle type styling configuration
+const PUZZLE_TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; bgColor: string; label: string }> = {
+  clarify: {
+    icon: <HelpCircle size={12} />,
+    color: '#3B82F6', // Blue
+    bgColor: 'rgba(59, 130, 246, 0.15)',
+    label: 'CLARIFY',
+  },
+  expand: {
+    icon: <Sparkles size={12} />,
+    color: '#F97316', // Orange
+    bgColor: 'rgba(249, 115, 22, 0.15)',
+    label: 'EXPAND',
+  },
+  refine: {
+    icon: <Filter size={12} />,
+    color: '#9333EA', // Purple
+    bgColor: 'rgba(147, 51, 234, 0.15)',
+    label: 'REFINE',
+  },
+};
 
 export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, levers, puzzleSummaries = [], onSelectPuzzle }) => {
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
@@ -22,6 +44,11 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
 
   const getLeverColor = (id: string) => {
     return levers.find(l => l.id === id)?.color || '#999';
+  };
+
+  const getPuzzleTypeStyle = (type: string | undefined) => {
+    const normalizedType = type?.toLowerCase() || 'clarify';
+    return PUZZLE_TYPE_CONFIG[normalizedType] || PUZZLE_TYPE_CONFIG.clarify;
   };
 
   return (
@@ -91,16 +118,17 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
 
                 {/* Sticker Label Area */}
                 <div className="absolute top-3 left-3 right-3 bottom-4 bg-white rounded-md overflow-hidden border border-gray-300 shadow-inner flex flex-col">
-                  {/* Top Color Strip & Lever Name */}
+                  {/* Top Color Strip & Puzzle Type Badge */}
                   <div className="h-auto w-full relative overflow-hidden shrink-0 border-b border-gray-100">
-                    <div className="absolute inset-0 opacity-20" style={{ backgroundColor: leverColor }}></div>
+                    <div className="absolute inset-0 opacity-20" style={{ backgroundColor: getPuzzleTypeStyle(puzzle.type).color }}></div>
 
                     <div className="relative z-10 p-3 pb-2">
                       <div
-                        className="inline-block text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded text-white shadow-sm"
-                        style={{ backgroundColor: leverColor }}
+                        className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded text-white shadow-sm"
+                        style={{ backgroundColor: getPuzzleTypeStyle(puzzle.type).color }}
                       >
-                        {levers.find(l => l.id === puzzle.leverId)?.name.split(' ')[0]}
+                        {getPuzzleTypeStyle(puzzle.type).icon}
+                        {getPuzzleTypeStyle(puzzle.type).label}
                       </div>
                     </div>
                   </div>
@@ -112,17 +140,10 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                     </h3>
 
                     {isFinished && (
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase tracking-wide mb-2">
+                      <div className="mt-auto flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase tracking-wide">
                         <CheckCircle2 size={12} /> Finished
                       </div>
                     )}
-
-                    <div className="mt-auto flex items-center gap-1 opacity-60">
-                      {puzzle.type === 'expand' && <ChevronRight size={12} />}
-                      {puzzle.type === 'clarify' && <HelpCircle size={12} />}
-                      {puzzle.type === 'converge' && <Gamepad2 size={12} />}
-                      <span className="text-[9px] uppercase font-bold tracking-wide">{puzzle.type}</span>
-                    </div>
                   </div>
                 </div>
               </div>

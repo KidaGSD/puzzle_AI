@@ -32,12 +32,23 @@ export interface QuadrantPieceInput {
 export interface QuadrantPieceOutput {
   pieces: Array<{
     mode: DesignMode;
-    // The question/prompt for the piece
+    // ═══════════════════════════════════════════════════════════
+    // PIECE TITLE (shown ON the piece - 2-5 words, 陈述式)
+    // ═══════════════════════════════════════════════════════════
     text: string;
     internalNote?: string;
-    // For image-based pieces
-    imageUrl?: string;
-    fragmentId?: string;
+
+    // ═══════════════════════════════════════════════════════════
+    // SOURCE FRAGMENT REFERENCE (for summary popup - NOT the title!)
+    // ═══════════════════════════════════════════════════════════
+    fragmentId?: string;           // Links to canvas fragment
+    fragmentTitle?: string;        // Original title from canvas
+    fragmentSummary?: string;      // AI summary of how fragment influenced this insight
+    imageUrl?: string;             // If derived from image fragment
+
+    // Priority for visual positioning and color saturation
+    priority?: 1 | 2 | 3 | 4 | 5 | 6;
+
     // @deprecated fields kept for backwards compatibility
     category?: PuzzleType | "CONNECT";
     title?: string;
@@ -49,43 +60,71 @@ const buildPrompt = (input: QuadrantPieceInput) => {
   const existing = input.existingPiecesForMode.map(p => p.text).join(" | ");
   const puzzleType = input.puzzleType;
 
-  // Build fragment context section
+  // Build fragment context section with IDs for referencing
   let fragmentSection = "";
+  const fragmentList: { id: string; title: string; summary: string }[] = [];
+
   if (input.fragments && input.fragments.length > 0) {
     const textFragments = input.fragments.filter(f => f.type === "TEXT");
     const imageFragments = input.fragments.filter(f => f.type === "IMAGE");
 
     if (textFragments.length > 0) {
-      fragmentSection += `\nText fragments from canvas:\n`;
+      fragmentSection += `\nText fragments from canvas (can be referenced in output):\n`;
       textFragments.slice(0, 5).forEach((f, i) => {
-        fragmentSection += `  ${i + 1}. "${f.summary || f.content.slice(0, 100)}" [tags: ${f.tags?.join(", ") || "none"}]\n`;
+        const title = f.summary?.slice(0, 30) || "Untitled";
+        const summary = f.summary || f.content.slice(0, 100);
+        fragmentSection += `  ${i + 1}. ID: "${f.id}", Title: "${title}", Summary: "${summary}"\n`;
+        fragmentList.push({ id: f.id, title, summary });
       });
     }
 
     if (imageFragments.length > 0) {
-      fragmentSection += `\nImage fragments from canvas:\n`;
+      fragmentSection += `\nImage fragments from canvas (can be referenced in output):\n`;
       imageFragments.slice(0, 3).forEach((f, i) => {
-        fragmentSection += `  ${i + 1}. ID: ${f.id}, Description: "${f.summary || 'Image'}" [tags: ${f.tags?.join(", ") || "none"}]\n`;
+        const title = f.summary?.slice(0, 30) || "Image";
+        fragmentSection += `  ${i + 1}. ID: "${f.id}", Title: "${title}", Description: "${f.summary || 'Image'}"\n`;
+        fragmentList.push({ id: f.id, title, summary: f.summary || "Image" });
       });
     }
   }
 
   return `You are the Quadrant Piece Agent for a design thinking puzzle app.
 
-=== CRITICAL: Generate STATEMENTS, NOT questions ===
-Each piece must be a SHORT DECLARATIVE STATEMENT (陈述式).
-NEVER generate questions. NEVER end with a question mark (?).
+=== CRITICAL REQUIREMENTS ===
 
-BAD (do NOT generate):
-  ✗ "How does the visual layout reinforce gentle awakening?"
-  ✗ "What's the dominant visual weight?"
-  ✗ "Should transitions feel instant or gradual?"
+1. PIECE TITLE (text field):
+   - MUST be 2-5 words ONLY (not more, not fewer)
+   - MUST be 陈述式 (declarative statement), NOT a question
+   - NEVER end with a question mark (?)
 
-GOOD (follow this style):
-  ✓ "Visual layout as gentle awakening"
-  ✓ "Light visual weight with breathing space"
-  ✓ "Gradual transitions creating calm flow"
-  ✓ "Minimalist form language"
+   BAD (do NOT generate):
+     ✗ "How does the visual layout reinforce gentle awakening?" (question)
+     ✗ "What's the dominant visual weight?" (question)
+     ✗ "The design should incorporate warm analog textures" (too long - 8 words)
+     ✗ "Clean" (too short - 1 word)
+
+   GOOD (follow this style - 2-5 words):
+     ✓ "Warm analog textures" (3 words)
+     ✓ "Light visual weight" (3 words)
+     ✓ "Gradual transitions creating calm" (4 words)
+     ✓ "Minimalist form language" (3 words)
+     ✓ "Playful yet professional tone" (4 words)
+
+2. SOURCE FRAGMENT REFERENCE (optional):
+   - If your insight is derived from a canvas fragment, include:
+     - fragmentId: the fragment's ID (from list below)
+     - fragmentTitle: original title from canvas
+     - fragmentSummary: 1-2 sentence explanation of how this fragment influenced the insight
+
+3. PRIORITY ASSIGNMENT (1-6):
+   - P1-P2: Core insights, most relevant to central question
+   - P3-P4: Supporting insights, add depth
+   - P5-P6: Subtle/nuanced insights, for exploration
+
+4. WORD COUNT → SHAPE:
+   - 2-3 words: Will be placed on TALL shapes
+   - 4-5 words: Will be placed on WIDE shapes
+   - Mix your outputs to have variety in shapes
 
 PUZZLE SESSION TYPE: ${puzzleType}
 Mode/Quadrant: ${input.mode} (${getModeDescription(input.mode)})
@@ -101,13 +140,19 @@ Each statement should ${getPuzzleTypeInstruction(puzzleType)}
 Examples for ${puzzleType} ${input.mode}:
 ${getPuzzleTypeExamples(puzzleType, input.mode)}
 
-Rules:
-- Each piece is a SHORT STATEMENT (max 8 words)
-- Declarative, not interrogative
-- No question marks (?)
-- Concise insight or direction
-
-Return JSON: { "pieces": [{ "mode": "${input.mode}", "text": "Your statement here", "fragmentId": "optional-fragment-id" }] }`;
+Return JSON with this structure:
+{
+  "pieces": [
+    {
+      "mode": "${input.mode}",
+      "text": "2-5 word statement",
+      "priority": 1-6,
+      "fragmentId": "optional-fragment-id",
+      "fragmentTitle": "optional-fragment-title",
+      "fragmentSummary": "optional-1-2-sentence-explanation"
+    }
+  ]
+}`;
 };
 
 // Helper descriptions for better prompts
