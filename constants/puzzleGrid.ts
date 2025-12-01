@@ -58,3 +58,47 @@ export const SHAPES = {
 };
 
 export const ALL_SHAPES = Object.values(SHAPES);
+
+// Shape categorization by aspect ratio for text fitting
+// Short text (2-3 words): Use tall/vertical shapes
+// Longer text (4-6 words): Use wide/horizontal shapes
+
+export const TALL_SHAPES = [
+  SHAPES.SHAPE_6,  // 1×2 vertical bar - best for very short text
+  SHAPES.SHAPE_7,  // 2×3 tall gamma
+  SHAPES.SHAPE_8,  // 2×3 vertical S/Z
+  SHAPES.SHAPE_3,  // 2×2 square - neutral, works for short text
+];
+
+export const WIDE_SHAPES = [
+  SHAPES.SHAPE_5,  // 3×1 horizontal bar - best for longer text
+  SHAPES.SHAPE_1,  // 3×2 horizontal L
+  SHAPES.SHAPE_2,  // 3×2 fat T
+  SHAPES.SHAPE_4,  // 3×2 horizontal Z
+];
+
+/**
+ * Select appropriate shape based on text word count
+ * @param text The text to display on the piece
+ * @returns Appropriate shape cells array
+ */
+export const getShapeForText = (text: string): { x: number; y: number }[] => {
+  // Count words (split by whitespace)
+  const wordCount = text.trim().split(/\s+/).length;
+
+  // 2-3 words: Use tall/vertical shapes
+  if (wordCount <= 3) {
+    return TALL_SHAPES[Math.floor(Math.random() * TALL_SHAPES.length)];
+  }
+
+  // 4-6+ words: Use wide/horizontal shapes
+  return WIDE_SHAPES[Math.floor(Math.random() * WIDE_SHAPES.length)];
+};
+
+/**
+ * Get a random shape from either category
+ */
+export const getRandomShapeFromCategory = (category: 'tall' | 'wide'): { x: number; y: number }[] => {
+  const shapes = category === 'tall' ? TALL_SHAPES : WIDE_SHAPES;
+  return shapes[Math.floor(Math.random() * shapes.length)];
+};

@@ -93,6 +93,49 @@ export const getQuadrantColor = (mode: DesignMode | QuadrantType): string => {
   return QUADRANT_COLORS[key];
 };
 
+/**
+ * Get color by priority level (1-6)
+ * Priority 1-2: High saturation (row 500-600 in palette)
+ * Priority 3-4: Medium saturation (row 300-400)
+ * Priority 5-6: Low saturation (row 100-200)
+ */
+export type PiecePriority = 1 | 2 | 3 | 4 | 5 | 6;
+export type SaturationLevel = 'high' | 'medium' | 'low';
+
+export const priorityToSaturation = (priority: PiecePriority): SaturationLevel => {
+  if (priority <= 2) return 'high';
+  if (priority <= 4) return 'medium';
+  return 'low';
+};
+
+export const getPriorityColor = (mode: DesignMode, priority: PiecePriority): string => {
+  const palette = QUADRANT_PALETTE[mode];
+  const saturation = priorityToSaturation(priority);
+
+  switch (saturation) {
+    case 'high':
+      return priority === 1 ? palette[600] : palette[500];
+    case 'medium':
+      return priority === 3 ? palette[400] : palette[300];
+    case 'low':
+      return priority === 5 ? palette[200] : palette[100];
+  }
+};
+
+/**
+ * Get all priority colors for a mode (useful for UI preview)
+ */
+export const getAllPriorityColors = (mode: DesignMode): Record<PiecePriority, string> => {
+  return {
+    1: getPriorityColor(mode, 1),
+    2: getPriorityColor(mode, 2),
+    3: getPriorityColor(mode, 3),
+    4: getPriorityColor(mode, 4),
+    5: getPriorityColor(mode, 5),
+    6: getPriorityColor(mode, 6),
+  };
+};
+
 // Calculate desaturated color based on distance from center
 export const getDistanceAdjustedColor = (
   baseColor: string,

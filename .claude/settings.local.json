@@ -7,7 +7,17 @@
       "Bash(npm install:*)",
       "Bash(npm run build:*)",
       "Bash(codex exec:*)",
-      "Bash(timeout 10 npm run dev)"
+      "Bash(timeout 10 npm run dev)",
+      "mcp__ide__getDiagnostics",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(pkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npx vite:*)",
+      "Bash(xargs kill -9)",
+      "WebFetch(domain:google.github.io)",
+      "WebSearch",
+      "Bash(timeout 30 npx tsc:*)"
     ],
     "deny": [],
     "ask": []

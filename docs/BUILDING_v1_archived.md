@@ -6,7 +6,98 @@
 
 ---
 
-## Recent Changes (2025-11-30)
+## Build Requirements (Updated)
+
+- Node.js **>= 18** (tested on `v18.20.8` and `v22.21.1`). Using Node 16 fails early with Vite 6 (`node:fs/promises` does not export `constants`).
+- Use `nvm use 18.20.8` (or `22.21.1`) before `npm run build`.
+- No framer-motion/camelCaseAttributes error observed once on Node 18+; the build passes with the current dependency set.
+
+---
+
+## Recent Changes (2025-12-01)
+
+### Puzzle Piece Visual Redesign - Unified SVG Shapes
+
+#### Problem
+- Puzzle pieces appeared "sliced by grids" - each cell rendered separately with visible borders
+- Individual cells had `border: 1px solid rgba(255,255,255,0.3)` and small `borderRadius: 2px`
+- Result: Multi-cell pieces looked fragmented rather than unified solid shapes
+
+#### Solution: SVG Path-Based Rendering
+
+**Algorithm** (`generatePiecePath` / `generateShapePath`):
+1. Create a Set of occupied cell coordinates for O(1) lookup
+2. For each cell, detect "outer edges" (edges not adjacent to another cell)
+3. Collect all outer edges and follow them to build a continuous path
+4. Apply quadratic Bezier curves (SVG `Q` command) at corners for smooth rounding
+
+**Key Code Pattern**:
+```typescript
+const generatePiecePath = (cells: Position[], cellSize: number, cornerRadius: number = 12): string => {
+  const cellSet = new Set(cells.map(c => `${c.x},${c.y}`));
+  const hasCell = (x: number, y: number) => cellSet.has(`${x},${y}`);
+
+  // Generate outer edges only (not touching neighbors)
+  cells.forEach(cell => {
+    if (!hasCell(cell.x, cell.y - 1)) edges.push(/* top edge */);
+    if (!hasCell(cell.x + 1, cell.y)) edges.push(/* right edge */);
+    // ... etc
+  });
+
+  // Follow connected edges, apply rounded corners via Q curves
+  d += `Q ${curr.x} ${curr.y} ${endX} ${endY} `;
+};
+```
+
+**Visual Result**:
+- Single unified SVG `<path>` element per piece (no individual cell divs)
+- Smooth rounded corners (14px radius) only at actual shape corners
+- Gradient fills with drop shadows for polish
+- Title centered using center-of-mass calculation
+
+**Files Modified**:
+- `components/puzzle/PuzzlePiece.tsx` - Complete rewrite with SVG rendering
+- `components/puzzle/QuadrantSpawner.tsx` - Same unified shape during drag preview
+
+---
+
+### Puzzle Piece UI Redesign - Title/Content Separation
+
+#### Problem
+- Puzzle pieces were displaying raw content text, looking messy and hard to read
+- No separation between piece title and full content
+- No preview when hovering/dragging pieces
+
+#### Solution: Title + Content Architecture
+
+**Data Model Updates** (`types.ts`, `domain/models.ts`):
+- `Piece.title` - Short, readable title (3-8 words), AI-generated, user-editable
+- `Piece.content` - Full description for preview popup
+- `Fragment.title` - Required field for all fragments
+
+**AI Agent Updates** (`ai/agents/quadrantPieceAgent.ts`):
+- AI now generates both `title` and `content` for each piece
+- Prompt instructs AI to create short titles for display, fuller content for preview
+
+**PuzzlePiece Component** (`components/puzzle/PuzzlePiece.tsx`):
+- Displays only `title` on the piece itself
+- Preview popup appears on hover (after 500ms delay) or during drag
+- Preview shows in fixed top-right position with:
+  - Colored header with piece title
+  - Full content body
+  - Image thumbnail (if image-based piece)
+  - Category and source badges
+- Blue info indicator shows if piece has content
+- Double-click to edit title
+
+**Store Updates** (`store/puzzleSessionStore.ts`):
+- Added `updatePieceTitle(id, title)` method
+- Added `updatePieceTitleAndContent(id, title, content)` method
+- Auto-migration: `title` defaults to `label` for backwards compatibility
+
+---
+
+## Previous Changes (2025-11-30)
 
 ### Phase 1 Complete: UI Refinement & Grid System
 

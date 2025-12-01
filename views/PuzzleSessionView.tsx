@@ -6,8 +6,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { Board } from '../components/puzzle/Board';
-import { contextStore } from '../store/runtime';
-import { Puzzle as DomainPuzzle } from '../domain/models';
+import { contextStore, ensurePuzzleSync, getPuzzleSyncInstance, ensurePuzzleSessionStateSync, startPuzzleSession, ensureOrchestrator } from '../store/runtime';
+import { useGameStore } from '../store/puzzleSessionStore';
+import { usePuzzleSessionStateStore } from '../store/puzzleSessionStateStore';
+import { Puzzle as DomainPuzzle, PuzzleType } from '../domain/models';
 
 interface PuzzleSessionViewProps {
   puzzleId: string;
@@ -20,6 +22,47 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
 }) => {
   const [puzzle, setPuzzle] = useState<DomainPuzzle | null>(null);
   const [processAim, setProcessAim] = useState('');
+  const setCurrentPuzzleId = useGameStore((state) => state.setCurrentPuzzleId);
+  const clearPieces = useGameStore((state) => state.clearPieces);
+  const { isGenerating, sessionState, clearSession } = usePuzzleSessionStateStore();
+
+  // Initialize puzzle sync, orchestrator, and trigger pre-generation
+  useEffect(() => {
+    // Ensure sync adapter is attached
+    ensurePuzzleSync();
+
+    // Ensure orchestrator is attached (handles AI events)
+    ensureOrchestrator();
+
+    // Ensure session state sync is listening for PUZZLE_SESSION_GENERATED
+    ensurePuzzleSessionStateSync();
+
+    // Set the current puzzle ID for the session
+    setCurrentPuzzleId(puzzleId);
+    console.log(`[PuzzleSessionView] Set currentPuzzleId: ${puzzleId}`);
+
+    // Get puzzle type from store and trigger pre-generation
+    const state = contextStore.getState();
+    const foundPuzzle = state.puzzles.find(p => p.id === puzzleId);
+    const puzzleType: PuzzleType = foundPuzzle?.type || 'CLARIFY';
+
+    console.log(`[PuzzleSessionView] Starting puzzle session with type: ${puzzleType}`);
+    startPuzzleSession(puzzleType);
+
+    // Cleanup on unmount
+    return () => {
+      // Sync any remaining pieces before leaving
+      const syncInstance = getPuzzleSyncInstance();
+      if (syncInstance) {
+        syncInstance.syncAllToDomain();
+      }
+      // Clear visual pieces, puzzle ID, and session state
+      clearPieces();
+      setCurrentPuzzleId(null);
+      clearSession();
+      console.log('[PuzzleSessionView] Cleaned up puzzle session');
+    };
+  }, [puzzleId, setCurrentPuzzleId, clearPieces, clearSession]);
 
   // Load puzzle data and subscribe to store updates
   useEffect(() => {

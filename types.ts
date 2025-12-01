@@ -29,7 +29,7 @@ export interface FragmentData {
   position: Position;
   size: Size;
   content: string; // Text content or Image URL
-  title?: string; // For links or images
+  title: string;   // Short title (AI-generated if not provided, user-editable)
   leverId?: string; // The "cluster" or "lever" this belongs to
   zIndex: number;
   summary?: string;
@@ -46,7 +46,7 @@ export interface Puzzle {
   id: string;
   leverId: string;
   title: string;
-  type: 'clarify' | 'expand' | 'converge';
+  type?: PuzzleSessionType; // clarify | expand | refine
   description: string;
 }
 
@@ -69,8 +69,19 @@ export const PALETTE = {
 };
 
 export type QuadrantType = 'form' | 'motion' | 'expression' | 'function';
-export type PieceCategoryType = 'clarify' | 'expand' | 'refine';
+// PuzzleSessionType is at SESSION level - each puzzle session is ONE of these types
+export type PuzzleSessionType = 'clarify' | 'expand' | 'refine';
+// @deprecated - use PuzzleSessionType instead
+export type PieceCategoryType = PuzzleSessionType;
 export type PieceSourceType = 'user' | 'ai' | 'ai_edited';
+
+/**
+ * Priority levels for puzzle pieces
+ * 1-2: Core/anchor insights (closest to center, high saturation)
+ * 3-4: Supporting insights (middle distance)
+ * 5-6: Subtle/detailed insights (further out, low saturation)
+ */
+export type PiecePriority = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface Piece {
   id: string;
@@ -78,9 +89,24 @@ export interface Piece {
   color: string;
   position: Position; // Grid coordinates
   cells: Position[]; // Relative coordinates of cells occupying the piece
+
+  // Main content field - the statement shown on the piece (陈述式)
+  text: string;               // The STATEMENT on the piece (AI-generated, 陈述式)
+  userAnnotation?: string;    // User's SHORT note
+
+  // Priority for color saturation and positioning
+  priority?: PiecePriority;   // 1-6, determines color saturation
+
+  // @deprecated - use text instead for display
+  title?: string;
+  content?: string;
   label?: string;
-  category?: PieceCategoryType; // CLARIFY, EXPAND, or REFINE
-  source?: PieceSourceType; // USER, AI, or AI_SUGGESTED_USER_EDITED
+
+  // @deprecated - pieces inherit type from puzzle session
+  category?: PieceCategoryType;
+  source?: PieceSourceType;
+  imageUrl?: string;
+  fragmentId?: string;
 }
 
 export interface DragItem {

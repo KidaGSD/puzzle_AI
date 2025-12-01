@@ -4,13 +4,26 @@ import { createLLMClient } from "./adkClient";
 import { runFragmentContextAgent } from "./agents/fragmentContextAgent";
 import { runMascotSelf, runMascotSuggest } from "./agents/mascotAgent";
 import { runPuzzleDesignerAgent } from "./agents/puzzleDesignerAgent";
-import { runQuadrantPieceAgent } from "./agents/quadrantPieceAgent";
+import { runQuadrantPieceAgent, FragmentContext } from "./agents/quadrantPieceAgent";
+// Multi-agent system imports
+import { runPuzzleSessionAgent, regenerateQuadrant } from "./agents/puzzleSessionAgent";
 import {
   Fragment,
   UIEvent,
   UIEventType,
+  DesignMode,
+  PuzzleType,
+  UserPreferenceProfile,
+  PreferenceStats,
+  PuzzleSessionInput,
+  PuzzleSessionState,
+  FragmentSummary,
 } from "../domain/models";
 import { MascotProposal } from "./agents/mascotAgent";
+import { useGameStore } from "../store/puzzleSessionStore";
+import { COLORS, ALL_SHAPES } from "../constants/puzzleGrid";
+import { QuadrantType, PieceCategoryType } from "../types";
+import { v4 as uuidv4 } from "uuid";
 
 // Callback type for mascot proposals - passed in to avoid circular dependency
 type MascotProposalCallback = (proposal: MascotProposal) => void;
@@ -158,35 +171,448 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   const handleQuadrantPiece = async (event: UIEvent) => {
     const state = store.getState();
     const payload: any = event.payload || {};
+
+    // Get current puzzle and its type
+    const currentPuzzle = state.puzzles[0];
+    const puzzleId = payload.puzzle?.id || currentPuzzle?.id || "p1";
+    // Get puzzleType from the SESSION - default to CLARIFY if not set
+    const puzzleType: PuzzleType = currentPuzzle?.type || payload.puzzleType || "CLARIFY";
+    const existingPieceId = payload.pieceId;
+
+    // Prepare fragment context for AI
+    const fragments: FragmentContext[] = state.fragments.slice(0, 8).map(f => ({
+      id: f.id,
+      type: f.type,
+      content: f.content,
+      summary: f.summary,
+      tags: f.tags,
+    }));
+
+    // Build preference hint from profile - now using puzzleType + mode
+    const preferenceKey = `${puzzleType}_${payload.mode}`;
+    const stats = state.preferenceProfile[preferenceKey];
+    let preferenceHint = payload.preferenceHint || "";
+    if (stats) {
+      if (stats.discarded > stats.placed) {
+        preferenceHint += " User often discards this type; keep suggestions concise.";
+      }
+      if (stats.edited > stats.placed / 2) {
+        preferenceHint += " User often edits AI suggestions; provide starting points.";
+      }
+    }
+
+    console.log(`[orchestrator] PIECE_CREATED: mode=${payload.mode}, puzzleType=${puzzleType}, pieceId=${existingPieceId || 'new'}, fragments=${fragments.length}`);
+
     const output = await runQuadrantPieceAgent(
       {
         processAim: state.project.processAim,
         mode: payload.mode,
-        category: payload.category,
-        puzzle: payload.puzzle || { id: "p1", centralQuestion: "Placeholder" },
+        puzzleType, // Pass session's puzzle type
+        puzzle: { id: puzzleId, centralQuestion: currentPuzzle?.centralQuestion || "What is the core question?", type: puzzleType },
         anchors: payload.anchors || [],
         existingPiecesForMode: payload.existingPiecesForMode || [],
-        preferenceHint: payload.preferenceHint,
+        preferenceHint,
+        fragments,
       },
       client,
     );
-    // Store suggestions as SUGGESTED pieces in state (placeholder; real UI would render)
-    store.setState(draft => {
-      output.pieces.forEach(p => {
+
+    console.log(`[orchestrator] AI returned ${output.pieces.length} pieces`);
+
+    // Get quadrant info for visual pieces
+    const mode = payload.mode as DesignMode;
+    const quadrant = mode.toLowerCase() as QuadrantType;
+    const color = COLORS[quadrant];
+
+    const gameStore = useGameStore.getState();
+
+    // If we have an existing piece ID, update it instead of creating new
+    if (existingPieceId && output.pieces.length > 0) {
+      const firstPiece = output.pieces[0];
+      // Use text field as the main content (the question/prompt)
+      const text = firstPiece.text || firstPiece.title || "What's the key insight?";
+
+      // Update the visual piece
+      gameStore.updatePieceText(existingPieceId, text);
+
+      console.log(`[orchestrator] Updated existing piece: ${existingPieceId} with text: "${text}"`);
+
+      // Store in domain layer
+      store.setState(draft => {
         draft.puzzlePieces.push({
-          id: `ai-${Date.now()}-${Math.random()}`,
-          puzzleId: payload.puzzle?.id || "p1",
-          mode: p.mode,
-          category: p.category as any,
-          text: p.text,
+          id: existingPieceId,
+          puzzleId,
+          mode: firstPiece.mode,
+          text,
           userAnnotation: "",
           anchorIds: [],
-          fragmentLinks: [],
+          fragmentLinks: firstPiece.fragmentId ? [{ fragmentId: firstPiece.fragmentId, puzzlePieceId: existingPieceId }] : [],
           source: "AI",
-          status: "SUGGESTED",
+          status: "PLACED",
+        });
+      });
+
+      return;
+    }
+
+    // Otherwise, create new pieces
+    output.pieces.forEach((p) => {
+      const pieceId = uuidv4();
+      const shape = ALL_SHAPES[Math.floor(Math.random() * ALL_SHAPES.length)];
+      // Use text field as the main content (the question/prompt)
+      const text = p.text || p.title || "What's the key insight?";
+
+      // Find a valid position for this piece based on quadrant
+      const position = findValidPosition(quadrant, shape, gameStore);
+
+      if (position) {
+        // Add to visual layer (puzzleSessionStore)
+        gameStore.addPiece({
+          id: pieceId,
+          quadrant,
+          color,
+          position,
+          cells: shape,
+          text,
+          source: 'ai',
+          imageUrl: p.imageUrl,
+          fragmentId: p.fragmentId,
+        });
+
+        console.log(`[orchestrator] Created visual piece: ${pieceId} at (${position.x}, ${position.y}) - "${text}"`);
+      }
+
+      // Also store in domain layer for persistence
+      store.setState(draft => {
+        draft.puzzlePieces.push({
+          id: pieceId,
+          puzzleId,
+          mode: p.mode,
+          text,
+          userAnnotation: "",
+          anchorIds: [],
+          fragmentLinks: p.fragmentId ? [{ fragmentId: p.fragmentId, puzzlePieceId: pieceId }] : [],
+          source: "AI",
+          status: "PLACED",
         });
       });
     });
+  };
+
+  // Helper to find a valid position for a piece in a quadrant
+  const findValidPosition = (
+    quadrant: QuadrantType,
+    shape: { x: number; y: number }[],
+    gameStore: ReturnType<typeof useGameStore.getState>
+  ): { x: number; y: number } | null => {
+    // Define starting positions based on quadrant (near center card edges)
+    const startPositions: Record<QuadrantType, { x: number; y: number; dx: number; dy: number }> = {
+      form: { x: -3, y: -2, dx: -1, dy: 0 },       // Left side, move left
+      motion: { x: 2, y: -2, dx: 1, dy: 0 },       // Right side, move right
+      expression: { x: -3, y: 1, dx: -1, dy: 1 },  // Bottom-left, move down-left
+      function: { x: 2, y: 1, dx: 1, dy: 1 },      // Bottom-right, move down-right
+    };
+
+    const start = startPositions[quadrant];
+    const maxAttempts = 20;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // Spiral outward from starting position
+      const offsetX = attempt % 5;
+      const offsetY = Math.floor(attempt / 5);
+      const testPos = {
+        x: start.x + start.dx * offsetX,
+        y: start.y + start.dy * offsetY,
+      };
+
+      if (gameStore.isValidDrop(testPos, shape)) {
+        return testPos;
+      }
+    }
+
+    // Fallback: try positions further out
+    for (let x = -8; x <= 8; x++) {
+      for (let y = -6; y <= 6; y++) {
+        // Skip if not in the right quadrant
+        if (quadrant === 'form' && x >= 0) continue;
+        if (quadrant === 'motion' && x < 0) continue;
+        if (quadrant === 'expression' && (x >= 0 || y < 0)) continue;
+        if (quadrant === 'function' && (x < 0 || y < 0)) continue;
+
+        if (gameStore.isValidDrop({ x, y }, shape)) {
+          return { x, y };
+        }
+      }
+    }
+
+    return null; // Could not find valid position
+  };
+
+  // Helper to create default preference stats
+  const createDefaultStats = (): PreferenceStats => ({
+    suggested: 0,
+    placed: 0,
+    edited: 0,
+    discarded: 0,
+    connected: 0,
+  });
+
+  // Helper to get preference key from puzzleType and mode
+  const getPreferenceKey = (puzzleType: string, mode: string): string => {
+    return `${puzzleType}_${mode}`;
+  };
+
+  // Handle piece placed event - update preference profile
+  const handlePiecePlaced = (event: UIEvent) => {
+    const payload: any = event.payload || {};
+    const { mode, source } = payload;
+    if (!mode) return;
+
+    // Get puzzleType from current session
+    const currentPuzzle = store.getState().puzzles[0];
+    const puzzleType = currentPuzzle?.type || "CLARIFY";
+
+    const key = getPreferenceKey(puzzleType, mode);
+    console.log(`[orchestrator] PIECE_PLACED: ${key}, source: ${source}`);
+
+    store.setState(draft => {
+      if (!draft.preferenceProfile[key]) {
+        draft.preferenceProfile[key] = createDefaultStats();
+      }
+      draft.preferenceProfile[key].placed += 1;
+
+      // If AI-suggested piece was placed, also increment suggested counter
+      if (source === 'AI') {
+        draft.preferenceProfile[key].suggested += 1;
+      }
+    });
+
+    // Log piece event
+    store.addPieceEvent({
+      pieceId: payload.pieceId,
+      type: source === 'AI' ? 'CREATE_SUGGESTED' : 'CREATE_USER',
+      timestamp: Date.now(),
+    });
+    store.addPieceEvent({
+      pieceId: payload.pieceId,
+      type: 'PLACE',
+      timestamp: Date.now(),
+    });
+  };
+
+  // Handle piece edited event - update preference profile
+  const handlePieceEdited = (event: UIEvent) => {
+    const payload: any = event.payload || {};
+    const { pieceId } = payload;
+    if (!pieceId) return;
+
+    // Find the piece to get its mode, get puzzleType from session
+    const state = store.getState();
+    const piece = state.puzzlePieces.find(p => p.id === pieceId);
+    if (!piece) return;
+
+    const currentPuzzle = state.puzzles.find(p => p.id === piece.puzzleId) || state.puzzles[0];
+    const puzzleType = currentPuzzle?.type || "CLARIFY";
+
+    const key = getPreferenceKey(puzzleType, piece.mode);
+    console.log(`[orchestrator] PIECE_EDITED: ${key}`);
+
+    store.setState(draft => {
+      if (!draft.preferenceProfile[key]) {
+        draft.preferenceProfile[key] = createDefaultStats();
+      }
+      draft.preferenceProfile[key].edited += 1;
+    });
+
+    // Log piece event
+    store.addPieceEvent({
+      pieceId,
+      type: 'EDIT_TEXT',
+      timestamp: Date.now(),
+    });
+  };
+
+  // Handle piece deleted event - update preference profile
+  const handlePieceDeleted = (event: UIEvent) => {
+    const payload: any = event.payload || {};
+    const { pieceId, mode } = payload;
+    if (!mode) return;
+
+    // Get puzzleType from current session
+    const currentPuzzle = store.getState().puzzles[0];
+    const puzzleType = currentPuzzle?.type || "CLARIFY";
+
+    const key = getPreferenceKey(puzzleType, mode);
+    console.log(`[orchestrator] PIECE_DELETED: ${key}`);
+
+    store.setState(draft => {
+      if (!draft.preferenceProfile[key]) {
+        draft.preferenceProfile[key] = createDefaultStats();
+      }
+      draft.preferenceProfile[key].discarded += 1;
+    });
+
+    // Log piece event
+    if (pieceId) {
+      store.addPieceEvent({
+        pieceId,
+        type: 'DELETE',
+        timestamp: Date.now(),
+      });
+    }
+  };
+
+  // ========== Multi-Agent System Handlers ==========
+
+  // Callback for puzzle session state updates
+  let puzzleSessionCallback: ((state: PuzzleSessionState) => void) | null = null;
+
+  /**
+   * Handle PUZZLE_SESSION_STARTED - triggers full puzzle pre-generation
+   * This runs the PuzzleSessionAgent which:
+   * 1. Generates central question
+   * 2. Runs 4 quadrant agents in parallel
+   * 3. Returns pre-generated pieces for all quadrants
+   */
+  const handlePuzzleSessionStarted = async (event: UIEvent) => {
+    const state = store.getState();
+    const payload: any = event.payload || {};
+
+    // Build input for PuzzleSessionAgent
+    const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 10).map(f => ({
+      id: f.id,
+      type: f.type,
+      summary: f.summary || f.content.slice(0, 100),
+      tags: f.tags,
+    }));
+
+    const input: PuzzleSessionInput = {
+      process_aim: state.project.processAim,
+      fragments_summary: fragmentsSummary,
+      previous_puzzle_summaries: state.puzzleSummaries.slice(0, 5),
+      preference_profile: state.preferenceProfile,
+      puzzle_type: payload.puzzleType || "CLARIFY",
+    };
+
+    console.log(`[orchestrator] PUZZLE_SESSION_STARTED: type=${input.puzzle_type}`);
+
+    try {
+      const result = await runPuzzleSessionAgent(input, client, payload.anchors || []);
+
+      // Notify UI with pre-generated pieces
+      if (puzzleSessionCallback) {
+        puzzleSessionCallback(result.sessionState);
+      }
+
+      // Emit event with session state for UI consumption
+      bus.emitType("PUZZLE_SESSION_GENERATED" as UIEventType, {
+        sessionState: result.sessionState,
+        errors: result.errors,
+      });
+
+      console.log(`[orchestrator] Session generated: ${result.sessionState.session_id}`);
+    } catch (error) {
+      console.error("[orchestrator] PUZZLE_SESSION_STARTED failed:", error);
+    }
+  };
+
+  /**
+   * Handle PUZZLE_SESSION_COMPLETED - aggregate preferences from piece events
+   */
+  const handlePuzzleSessionCompleted = async (event: UIEvent) => {
+    const state = store.getState();
+    const payload: any = event.payload || {};
+    const puzzleId = payload.puzzleId;
+
+    console.log(`[orchestrator] PUZZLE_SESSION_COMPLETED: puzzle=${puzzleId}`);
+
+    // Aggregate piece events into preference profile updates
+    const recentEvents = state.pieceEvents.filter(
+      e => Date.now() - e.timestamp < 30 * 60 * 1000 // Last 30 minutes
+    );
+
+    // Group by piece and analyze behavior
+    const pieceStats: Record<string, { placed: boolean; edited: boolean; deleted: boolean }> = {};
+    for (const evt of recentEvents) {
+      if (!pieceStats[evt.pieceId]) {
+        pieceStats[evt.pieceId] = { placed: false, edited: false, deleted: false };
+      }
+      if (evt.type === "PLACE") pieceStats[evt.pieceId].placed = true;
+      if (evt.type === "EDIT_TEXT") pieceStats[evt.pieceId].edited = true;
+      if (evt.type === "DELETE") pieceStats[evt.pieceId].deleted = true;
+    }
+
+    // Update preference profile based on aggregated stats
+    const currentPuzzle = state.puzzles.find(p => p.id === puzzleId) || state.puzzles[0];
+    const puzzleType = currentPuzzle?.type || "CLARIFY";
+
+    store.setState(draft => {
+      for (const [pieceId, stats] of Object.entries(pieceStats)) {
+        const piece = draft.puzzlePieces.find(p => p.id === pieceId);
+        if (!piece) continue;
+
+        const key = `${puzzleType}_${piece.mode}`;
+        if (!draft.preferenceProfile[key]) {
+          draft.preferenceProfile[key] = {
+            suggested: 0,
+            placed: 0,
+            edited: 0,
+            discarded: 0,
+            connected: 0,
+          };
+        }
+
+        if (stats.placed) draft.preferenceProfile[key].placed += 1;
+        if (stats.edited) draft.preferenceProfile[key].edited += 1;
+        if (stats.deleted) draft.preferenceProfile[key].discarded += 1;
+      }
+    });
+
+    console.log(`[orchestrator] Preference profile updated for puzzle ${puzzleId}`);
+  };
+
+  /**
+   * Handle QUADRANT_REGENERATE - regenerate pieces for a single quadrant
+   */
+  const handleQuadrantRegenerate = async (event: UIEvent) => {
+    const state = store.getState();
+    const payload: any = event.payload || {};
+    const mode = payload.mode as "FORM" | "MOTION" | "EXPRESSION" | "FUNCTION";
+    const sessionState = payload.sessionState as PuzzleSessionState;
+
+    if (!mode || !sessionState) {
+      console.error("[orchestrator] QUADRANT_REGENERATE: missing mode or sessionState");
+      return;
+    }
+
+    console.log(`[orchestrator] QUADRANT_REGENERATE: mode=${mode}`);
+
+    const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 5).map(f => ({
+      id: f.id,
+      type: f.type,
+      summary: f.summary || f.content.slice(0, 100),
+      tags: f.tags,
+    }));
+
+    try {
+      const newPieces = await regenerateQuadrant(
+        mode,
+        sessionState,
+        fragmentsSummary,
+        state.preferenceProfile,
+        client
+      );
+
+      // Emit regenerated pieces for UI
+      bus.emitType("QUADRANT_REGENERATED" as UIEventType, {
+        mode,
+        pieces: newPieces,
+      });
+
+      console.log(`[orchestrator] Regenerated ${newPieces.length} pieces for ${mode}`);
+    } catch (error) {
+      console.error(`[orchestrator] QUADRANT_REGENERATE failed for ${mode}:`, error);
+    }
   };
 
   // Helper to safely execute async handlers with error logging
@@ -216,6 +642,31 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       case "PIECE_CREATED":
         // PIECE_CREATED with payload { mode, category, puzzle, anchors }
         safeAsync(() => handleQuadrantPiece(event), "PIECE_CREATED");
+        break;
+      case "PIECE_PLACED":
+        // PIECE_PLACED: sync'd from visual layer, update preference profile
+        handlePiecePlaced(event);
+        break;
+      case "PIECE_EDITED":
+        // PIECE_EDITED: user edited piece text
+        handlePieceEdited(event);
+        break;
+      case "PIECE_DELETED":
+        // PIECE_DELETED: user removed piece from board
+        handlePieceDeleted(event);
+        break;
+      // Multi-agent system events
+      case "PUZZLE_SESSION_STARTED":
+        console.log('[orchestrator] handling PUZZLE_SESSION_STARTED');
+        safeAsync(() => handlePuzzleSessionStarted(event), "PUZZLE_SESSION_STARTED");
+        break;
+      case "PUZZLE_SESSION_COMPLETED":
+        console.log('[orchestrator] handling PUZZLE_SESSION_COMPLETED');
+        safeAsync(() => handlePuzzleSessionCompleted(event), "PUZZLE_SESSION_COMPLETED");
+        break;
+      case "QUADRANT_REGENERATE":
+        console.log('[orchestrator] handling QUADRANT_REGENERATE');
+        safeAsync(() => handleQuadrantRegenerate(event), "QUADRANT_REGENERATE");
         break;
       default:
         break;

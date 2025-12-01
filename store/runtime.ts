@@ -1,4 +1,4 @@
-import { Project } from "../domain/models";
+import { Project, PuzzleSessionState, UIEvent } from "../domain/models";
 import { createContextStore, createEmptyProjectStore } from "./contextStore";
 import { createEventBus } from "./eventBus";
 import { createPuzzleSync, PuzzleSyncAdapter } from "./puzzleSync";
@@ -6,6 +6,7 @@ import { attachOrchestrator, setMascotCallback } from "../ai/orchestrator";
 import { attachOrchestratorStub } from "../ai/orchestratorStub";
 import { MascotProposal } from "../ai/agents/mascotAgent";
 import { MATCHA_PROJECT, loadMockFragments } from "../services/mockDataLoader";
+import { usePuzzleSessionStateStore } from "./puzzleSessionStateStore";
 
 // Use the matcha brand project as default
 const defaultProject: Project = MATCHA_PROJECT;
@@ -91,3 +92,56 @@ export const ensureOrchestrator = () => {
 
 // Legacy stub (optional, only if orchestrator not desired)
 export const attachStub = () => attachOrchestratorStub(eventBus, contextStore);
+
+// ========== Puzzle Session State Sync ==========
+
+let puzzleSessionStateUnsubscribe: (() => void) | null = null;
+
+/**
+ * Listen for PUZZLE_SESSION_GENERATED events and update the session state store
+ */
+export const ensurePuzzleSessionStateSync = () => {
+  if (puzzleSessionStateUnsubscribe) {
+    console.log('[runtime] Puzzle session state sync already attached');
+    return puzzleSessionStateUnsubscribe;
+  }
+
+  puzzleSessionStateUnsubscribe = eventBus.subscribe((event: UIEvent) => {
+    if (event.type === 'PUZZLE_SESSION_GENERATED') {
+      const payload = event.payload as { sessionState: PuzzleSessionState; errors?: string[] };
+      console.log('[runtime] PUZZLE_SESSION_GENERATED received, updating session state store');
+
+      if (payload.sessionState) {
+        usePuzzleSessionStateStore.getState().setSessionState(payload.sessionState);
+      }
+
+      if (payload.errors && payload.errors.length > 0) {
+        console.warn('[runtime] Session generation had errors:', payload.errors);
+      }
+    }
+
+    if (event.type === 'PUZZLE_SESSION_STARTED') {
+      console.log('[runtime] PUZZLE_SESSION_STARTED, setting generating state');
+      usePuzzleSessionStateStore.getState().setGenerating(true);
+    }
+  });
+
+  console.log('[runtime] Puzzle session state sync attached');
+  return puzzleSessionStateUnsubscribe;
+};
+
+/**
+ * Start a new puzzle session with pre-generation
+ */
+export const startPuzzleSession = (puzzleType: 'CLARIFY' | 'EXPAND' | 'REFINE' = 'CLARIFY') => {
+  console.log(`[runtime] Starting puzzle session with type: ${puzzleType}`);
+
+  // Clear existing session
+  usePuzzleSessionStateStore.getState().clearSession();
+
+  // Emit event to trigger multi-agent pre-generation
+  eventBus.emitType('PUZZLE_SESSION_STARTED', {
+    puzzleType,
+    anchors: [], // Could be passed from UI
+  });
+};

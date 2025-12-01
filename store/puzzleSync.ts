@@ -8,7 +8,7 @@
 import { useGameStore, visualToDomainPiece } from './puzzleSessionStore';
 import { ContextStore } from './contextStore';
 import { EventBus } from './eventBus';
-import { Piece, PieceSourceType } from '../types';
+import { Piece } from '../types';
 import { UUID, PieceStatus } from '../domain/models';
 
 export interface PuzzleSyncConfig {
@@ -155,7 +155,7 @@ export class PuzzleSyncAdapter {
   /**
    * Handle piece removed from board
    */
-  private onPieceRemoved(piece: Piece, puzzleId: UUID): void {
+  private onPieceRemoved(piece: Piece, _puzzleId: UUID): void {
     // Update status in contextStore to DISCARDED
     this.contextStore.setPieceStatus(piece.id, 'DISCARDED');
 
@@ -164,7 +164,6 @@ export class PuzzleSyncAdapter {
       type: 'PIECE_DELETED',
       payload: {
         pieceId: piece.id,
-        puzzleId,
         mode: piece.quadrant.toUpperCase(),
         category: (piece.category || 'clarify').toUpperCase(),
       },

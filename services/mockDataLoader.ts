@@ -175,7 +175,7 @@ const getRandomPosition = (
  * @param projectId Project ID for the fragments
  */
 export const getRandomImageFragments = (
-  count: number = 6,
+  count: number = 3, // Reduced from 6 to 3 for faster loading
   projectId: string
 ): Fragment[] => {
   const shuffled = shuffleArray(MOCK_IMAGES);
@@ -185,6 +185,7 @@ export const getRandomImageFragments = (
     id: generateId(),
     projectId,
     type: "IMAGE" as FragmentType,
+    title: filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '), // Generate title from filename
     content: `/MockupFragments/${filename}`,
     position: getRandomPosition(index, count),
     size: { width: 200, height: 150 },
@@ -203,7 +204,8 @@ export const getTextFragments = (projectId: string): Fragment[] => {
     id: generateId(),
     projectId,
     type: "TEXT" as FragmentType,
-    content: `**${section.title}**\n\n${section.content}`,
+    title: section.title, // Use section title as fragment title
+    content: section.content, // Just the content without title embedded
     position: getRandomPosition(index, TEXT_FRAGMENT_SECTIONS.length, 1200, 800),
     size: { width: 280, height: 180 },
     labels: [],
@@ -218,8 +220,9 @@ export const getTextFragments = (projectId: string): Fragment[] => {
  * @param projectId Project ID for the fragments
  */
 export const loadMockFragments = (projectId: string): Fragment[] => {
-  const imageFragments = getRandomImageFragments(6, projectId);
-  const textFragments = getTextFragments(projectId);
+  // Reduced counts for faster initial loading
+  const imageFragments = getRandomImageFragments(3, projectId);
+  const textFragments = getTextFragments(projectId).slice(0, 5); // Only first 5 text fragments
 
   // Combine and redistribute positions
   const allFragments = [...imageFragments, ...textFragments];

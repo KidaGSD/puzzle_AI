@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HomeCanvasView } from './views/HomeCanvasView';
 import { PuzzleSessionView } from './views/PuzzleSessionView';
 import { LoadingTransition } from './components/common/LoadingTransition';
-import { contextStore, eventBus, ensureOrchestrator } from './store/runtime';
+import { contextStore, eventBus, ensureOrchestrator, getPuzzleSyncInstance } from './store/runtime';
 
 // View types
 type AppView = 'canvas' | 'puzzle';
@@ -85,18 +85,27 @@ export default function App() {
     console.log('[app] exiting puzzle:', puzzleId);
 
     if (puzzleId) {
+      // Force sync all pieces to domain before emitting finish event
+      const syncInstance = getPuzzleSyncInstance();
+      if (syncInstance) {
+        syncInstance.syncAllToDomain();
+        console.log('[app] Synced all pieces to domain before finish');
+      }
+
       // Emit puzzle finish event to trigger summary generation
       const state = contextStore.getState();
       const puzzle = state.puzzles.find(p => p.id === puzzleId);
-      const pieces = state.puzzlePieces.filter(p => p.puzzleId === puzzleId);
+      const pieces = state.puzzlePieces.filter(p => p.puzzleId === puzzleId && p.status !== 'DISCARDED');
       const anchors = state.anchors.filter(a => a.puzzleId === puzzleId);
+
+      console.log(`[app] Finishing puzzle with ${pieces.length} pieces`);
 
       eventBus.emitType('PUZZLE_FINISH_CLICKED', {
         puzzleId,
         centralQuestion: puzzle?.centralQuestion || '',
         anchors: anchors.map(a => ({ type: a.type, text: a.text })),
-        pieces: pieces.map(p => ({ mode: p.mode, text: p.text })),
-        fragmentIds: [], // Could link fragments here
+        pieces: pieces.map(p => ({ mode: p.mode, category: p.category, text: p.text })),
+        fragmentIds: pieces.flatMap(p => p.fragmentLinks.map(fl => fl.fragmentId)),
       });
     }
 

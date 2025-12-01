@@ -28,7 +28,7 @@ export const Board: React.FC<BoardProps> = ({
 
       {/* Game Layer */}
       <div className="relative w-full h-full">
-        {/* Central Anchor */}
+        {/* Central Card */}
         <CenterCard
           centralQuestion={puzzle?.centralQuestion}
           processAim={processAim}

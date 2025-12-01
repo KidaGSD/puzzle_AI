@@ -59,7 +59,8 @@ export const visualToDomainPiece = (
     puzzleId,
     mode: quadrantToMode(piece.quadrant),
     category: categoryToDomain(piece.category),
-    text: piece.label || '',
+    title: piece.title || piece.label || '',
+    text: piece.content || piece.label || '',
     userAnnotation: undefined,
     anchorIds: [],
     fragmentLinks: [],
@@ -81,8 +82,10 @@ export const domainToVisualPiece = (
     color,
     position,
     cells,
-    label: domainPiece.text,
-    category: categoryToVisual(domainPiece.category),
+    text: domainPiece.text,
+    title: domainPiece.title || domainPiece.text,
+    content: domainPiece.text,
+    category: domainPiece.category ? categoryToVisual(domainPiece.category) : undefined,
     source: sourceToVisual(domainPiece.source),
   };
 };
@@ -98,6 +101,9 @@ interface GameState {
   addPiece: (piece: Piece) => void;
   updatePiecePosition: (id: string, newPos: Position) => void;
   updatePieceLabel: (id: string, label: string) => void;
+  updatePieceTitle: (id: string, title: string) => void;
+  updatePieceText: (id: string, text: string) => void;
+  updatePieceTitleAndContent: (id: string, title: string, content: string) => void;
   removePiece: (id: string) => void;
   clearPieces: () => void;
 
@@ -129,11 +135,15 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   addPiece: (piece) => {
     // Default source to 'user' if not specified
+    // Use text as the main content field, with fallback to title/label
     const pieceWithDefaults: Piece = {
       ...piece,
+      text: piece.text || piece.title || piece.label || '...',
+      title: piece.title || piece.text || piece.label || '...',
+      content: piece.content || '',
       source: piece.source || 'user',
-      category: piece.category || 'clarify',
     };
+    console.log(`[puzzleSessionStore] addPiece: id=${piece.id}, title="${pieceWithDefaults.title}", text="${pieceWithDefaults.text}"`);
     set((state) => ({ pieces: [...state.pieces, pieceWithDefaults] }));
   },
 
@@ -150,7 +160,45 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (p.id !== id) return p;
         // Mark AI pieces as edited when user changes label
         const newSource: PieceSourceType = p.source === 'ai' ? 'ai_edited' : p.source || 'user';
-        return { ...p, label, source: newSource };
+        return { ...p, label, title: label, source: newSource };
+      }),
+    })),
+
+  updatePieceTitle: (id, title) =>
+    set((state) => ({
+      pieces: state.pieces.map((p) => {
+        if (p.id !== id) return p;
+        // Mark AI pieces as edited when user changes title
+        const newSource: PieceSourceType = p.source === 'ai' ? 'ai_edited' : p.source || 'user';
+        return { ...p, title, text: title, source: newSource };
+      }),
+    })),
+
+  updatePieceText: (id, text) =>
+    set((state) => {
+      console.log(`[puzzleSessionStore] updatePieceText called: id=${id}, text="${text.substring(0, 50)}..."`);
+      const pieceExists = state.pieces.some(p => p.id === id);
+      console.log(`[puzzleSessionStore] Piece exists: ${pieceExists}, total pieces: ${state.pieces.length}`);
+      if (!pieceExists) {
+        console.warn(`[puzzleSessionStore] PIECE NOT FOUND: ${id}`);
+      }
+      return {
+        pieces: state.pieces.map((p) => {
+          if (p.id !== id) return p;
+          // Keep source as 'ai' - this is called by orchestrator with AI content
+          console.log(`[puzzleSessionStore] Updating piece ${id}: old title="${p.title}", new text="${text.substring(0, 50)}..."`);
+          return { ...p, text, title: text };
+        }),
+      };
+    }),
+
+  updatePieceTitleAndContent: (id, title, content) =>
+    set((state) => ({
+      pieces: state.pieces.map((p) => {
+        if (p.id !== id) return p;
+        // This is typically called by AI, so keep the source as is
+        // Also update text field for consistency
+        return { ...p, title, text: title, content };
       }),
     })),
 
@@ -236,7 +284,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   isValidDrop: (targetPos, cells, ignorePieceId = null) => {
     const state = get();
     // 1. Must not collide with center card or other pieces
-    if (state.checkCollision(ignorePieceId, targetPos, cells)) return false;
+    const hasCollision = state.checkCollision(ignorePieceId, targetPos, cells);
+    if (hasCollision) {
+      console.log('[isValidDrop] Collision detected, rejecting');
+      return false;
+    }
 
     // 2. Must connect to center card edge or existing piece
     const halfW = CENTER_CARD_WIDTH / 2;
@@ -245,6 +297,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     const cardMaxX = halfW - 1;
     const cardMinY = -halfH;
     const cardMaxY = halfH - 1;
+
+    console.log('[isValidDrop] Center card bounds:', { cardMinX, cardMaxX, cardMinY, cardMaxY });
 
     const isAdjacentToCenterCard = (x: number, y: number) => {
       const adjacentLeft = (x === cardMinX - 1) && (y >= cardMinY && y <= cardMaxY);
@@ -260,7 +314,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       const absX = targetPos.x + cell.x;
       const absY = targetPos.y + cell.y;
 
-      if (isAdjacentToCenterCard(absX, absY)) return true;
+      const adjacent = isAdjacentToCenterCard(absX, absY);
+      console.log(`[isValidDrop] Cell at (${absX}, ${absY}) adjacent to center: ${adjacent}`);
+
+      if (adjacent) return true;
 
       for (const dir of directions) {
         const nx = absX + dir.x;
@@ -269,12 +326,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           if (other.id === ignorePieceId) continue;
           for (const oc of other.cells) {
             if (other.position.x + oc.x === nx && other.position.y + oc.y === ny) {
+              console.log(`[isValidDrop] Adjacent to existing piece at (${nx}, ${ny})`);
               return true;
             }
           }
         }
       }
     }
+    console.log('[isValidDrop] No valid connection found, rejecting');
     return false;
   }
 }));

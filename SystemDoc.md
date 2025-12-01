@@ -116,15 +116,25 @@ type DesignMode \= "FORM" | "MOTION" | "EXPRESSION" | "FUNCTION"
 
 A **Puzzle** is a focused thinking unit around one **central question**.
 
+**IMPORTANT**: Each Puzzle SESSION is ONE of three types: **Clarify**, **Expand**, or **Refine**. This type determines the nature of ALL content within that session.
+
+* **Puzzle Types**:
+
+  * **CLARIFY** – Make vague intent more precise (when things are fuzzy)
+
+  * **EXPAND** – Grow or diversify options (when you need more angles)
+
+  * **REFINE** – Narrow and polish toward a direction (when you have ideas but need to converge)
+
 * Central question can be:
 
-  * user-initiated (“I’m not sure how to start the target audience exploration…”),
+  * user-initiated ("I'm not sure how to start the target audience exploration…"),
 
-  * or AI-synthesized (“Let’s untangle how your features map to these audiences.”).
+  * or AI-synthesized ("Let's untangle how your features map to these audiences.").
 
 * The question is generated using:
 
-  * user’s explicit request (if any),
+  * user's explicit request (if any),
 
   * **Process Aim**,
 
@@ -132,47 +142,51 @@ A **Puzzle** is a focused thinking unit around one **central question**.
 
   * summaries of previous puzzles in the same project.
 
-type Puzzle \= {  
-  id: string  
-  centralQuestion: string  
-  projectId: string  
-  createdFrom: "user\_request" | "ai\_suggested"  
+type PuzzleType \= "CLARIFY" | "EXPAND" | "REFINE"
+
+type Puzzle \= {
+  id: string
+  centralQuestion: string
+  projectId: string
+  type: PuzzleType              // THE PUZZLE'S OPERATION TYPE
+  createdFrom: "user\_request" | "ai\_suggested"
 }
 
 ---
 
-## **1.5 Puzzle Pieces (Clarify / Expand / Refine)**
+## **1.5 Puzzle Pieces**
 
 Inside a puzzle, users drag **puzzle pieces** out from the four corner hubs (one per quadrant).
 
+**IMPORTANT**: Pieces do NOT have individual categories. They INHERIT the puzzle type from their session. A piece in a Clarify puzzle generates clarifying questions; a piece in an Expand puzzle generates expanding prompts.
+
 Each piece is:
-
-* typed as one of three **puzzle categories**:
-
-  * **Clarify** – make something sharper / more specific.
-
-  * **Expand** – add new angles or variety.
-
-  * **Refine** – converge, choose, polish; user already has some idea.
 
 * associated with one **quadrant (mode)**:
 
   * FORM / MOTION / EXPRESSION / FUNCTION.
 
+* generates content appropriate to the **session's puzzle type**:
+
+  * In a CLARIFY puzzle → sharpening questions ("Should the design feel more geometric or organic?")
+
+  * In an EXPAND puzzle → divergent prompts ("If this interface were an object, what would it feel like?")
+
+  * In a REFINE puzzle → convergent choices ("From everything, what 2 visual elements *must* remain?")
+
 * optionally linked to one or more fragments.
 
-type PuzzlePieceCategory \= "CLARIFY" | "EXPAND" | "REFINE"
-
-type PuzzlePiece \= {  
-  id: string  
-  puzzleId: string  
-  mode: DesignMode  
-  category: PuzzlePieceCategory  
-  text: string             // the question / prompt on the block  
-  userAnnotation?: string  // user’s short answer or note  
-  anchorIds: string\[\]      // which anchors / nodes it’s attached to  
-  fragmentLinks: FragmentLink\[\]  
-  source: "AI" | "USER" | "AI\_SUGGESTED\_USER\_EDITED"  
+type PuzzlePiece \= {
+  id: string
+  puzzleId: string
+  mode: DesignMode
+  // NOTE: NO category field - inherited from puzzle.type
+  text: string             // the question / prompt on the block (AI-generated)
+  userAnnotation?: string  // user's short answer or note
+  anchorIds: string\[\]      // which anchors / nodes it's attached to
+  fragmentLinks: FragmentLink\[\]
+  source: "AI" | "USER" | "AI\_SUGGESTED\_USER\_EDITED"
+  status: "SUGGESTED" | "PLACED" | "EDITED" | "DISCARDED" | "CONNECTED"
 }
 
 ---
@@ -332,7 +346,9 @@ Once the puzzle opens:
 
 ### **2.3.1 What users do**
 
-* Drag puzzle pieces out of hubs (Clarify / Expand / Refine).
+* Drag puzzle pieces out of hubs (each hub has a single [+] button).
+
+* All pieces generated follow the session's puzzle type (Clarify / Expand / Refine).
 
 * Attach them:
 
@@ -350,81 +366,81 @@ Over time, the puzzle becomes a small **argument map** around the central questi
 
 ---
 
-## **2.3.2 AI behavior by category**
+## **2.3.2 AI behavior by puzzle type**
 
-**Clarify pieces**
+The entire puzzle session is ONE type. All pieces within that session generate content appropriate to that type.
 
-* Goal: sharpen vague statements.
+**CLARIFY Puzzle Session**
 
-* Typical triggers:
+* Goal: sharpen vague statements across all quadrants.
 
-  * heavy use of fuzzy words (“clean”, “premium”, “fun”) with no concrete specifics,
+* When to use:
+
+  * heavy use of fuzzy words ("clean", "premium", "fun") with no concrete specifics,
 
   * contradictory adjectives,
 
   * missing audience / function info.
 
-Examples per quadrant:
+Example questions per quadrant:
 
-* FORM: “Should the design feel more geometric or organic?”
+* FORM: "Should the design feel more geometric or organic?"
 
-* MOTION: “Is the motion calm and smooth, or bouncy and energetic?”
+* MOTION: "Is the motion calm and smooth, or bouncy and energetic?"
 
-* EXPRESSION: “Which 3 emotions best describe what you want people to feel?”
+* EXPRESSION: "Which 3 emotions best describe what you want people to feel?"
 
-* FUNCTION: “Where will this mostly be seen (mobile, print, in-store)?”
+* FUNCTION: "Where will this mostly be seen (mobile, print, in-store)?"
 
-**Expand pieces**
+**EXPAND Puzzle Session**
 
-* Goal: bring in fresh angles and avoid local minima.
+* Goal: bring in fresh angles and avoid local minima across all quadrants.
 
-* Triggers:
+* When to use:
 
-  * quadrant is almost empty,
+  * quadrants are almost empty,
 
-  * user repeatedly writes “not sure yet” or similar,
+  * user repeatedly writes "not sure yet" or similar,
 
   * very narrow set of ideas.
 
-Examples:
+Example questions per quadrant:
 
-* FORM: “If this interface were an object, what would it feel like to touch?”
+* FORM: "If this interface were an object, what would it feel like to touch?"
 
-* MOTION: “Imagine a 2-second intro animation—what happens in it?”
+* MOTION: "Imagine a 2-second intro animation—what happens in it?"
 
-* EXPRESSION: “If the product had a voice, whose voice would it sound like?”
+* EXPRESSION: "If the product had a voice, whose voice would it sound like?"
 
-* FUNCTION: “Are there constraints (budget, accessibility, timelines) we haven’t named yet?”
+* FUNCTION: "Are there constraints (budget, accessibility, timelines) we haven't named yet?"
 
-**Refine pieces**
+**REFINE Puzzle Session**
 
 * Goal: converge and polish once there is enough material.
 
-Refine is its **own category**, not just a subtype of clarify:
+* When to use:
 
-* It assumes the user already **has** a direction; now we:
+  * user already **has** a direction; now we need to:
 
-  * pick the few essentials,
+    * pick the few essentials,
 
-  * reconcile conflicts,
+    * reconcile conflicts,
 
-  * choose trade-offs.
+    * choose trade-offs.
 
-Triggers:
+  * quadrants have many notes / pieces (e.g., ≥5),
 
-* quadrant has many notes / pieces (e.g., ≥5),
+  * explicit user signal like "I think I know, but it's messy."
 
-* there is explicit user signal like “I think I know, but it’s messy.”
+Example questions per quadrant:
 
-Examples:
+* FORM: "From everything here, what 2 visual elements *must* remain?"
 
-* FORM: “From everything here, what 2 visual elements *must* remain?”
+* MOTION: "Which motion concept best fits your analog-warm goal?"
 
-* MOTION: “Which motion concept best fits your analog-warm goal?”
+* EXPRESSION: "Which one emotional axis feels most important to commit to now?"
 
-* EXPRESSION: “Which one emotional axis feels most important to commit to now?”
-
-* FUNCTION: “If you had to prioritize only one primary job-to-be-done, which is it?”
+* FUNCTION: "If you had to prioritize only one primary job-to-be-done, which is it?"
 
 ---
 
@@ -600,11 +616,13 @@ Feature simplification:
 
    * Use color labels at fragment level only for “belongs to this puzzle”.
 
-2. **Exactly 3 puzzle categories**
+2. **Exactly 3 puzzle types (session-level)**
 
-   * Clarify / Expand / Refine in the UI and the prompts.
+   * Clarify / Expand / Refine are PUZZLE SESSION types, not piece categories.
 
-   * Connect is a separate system-level operation, not a piece category.
+   * All pieces within a session inherit the session's type.
+
+   * Connect is a separate system-level operation, not a puzzle type.
 
 3. **Static 4-quadrant template**
 
@@ -644,7 +662,9 @@ clarifications:
 
 * fragments are tagged to puzzles via color/links rather than quadrants,
 
-* **Refine** is a full puzzle category for convergence,
+* **Clarify / Expand / Refine** are PUZZLE SESSION types, not piece-level categories,
+
+* each puzzle session is ONE type, and all pieces inherit that type,
 
 * central questions are synthesized from both explicit user queries and global context,
 

@@ -66,15 +66,15 @@ Core domain types come from the system doc: `Fragment`, `Puzzle`, `PuzzlePiece`,
 
 * `clusters[]` (fragment groupings \+ theme)
 
-* `puzzles[]` (id, centralQuestion, createdFrom, projectId)
+* `puzzles[]` (id, centralQuestion, type, createdFrom, projectId) // type = CLARIFY | EXPAND | REFINE
 
 * `anchors[]` (id, puzzleId, type, text)
 
-* `puzzlePieces[]` (mode, category, text, userAnnotation, status, fragmentLinks, source)
+* `puzzlePieces[]` (mode, text, userAnnotation, status, fragmentLinks, source) // NOTE: NO category - inherited from puzzle.type
 
 * `puzzleSummaries[]` (directionStatement, reasons, openQuestions)
 
-* `preferenceProfile` (per-mode, per-category stats)
+* `preferenceProfile` (per puzzleType+mode stats)
 
 * `agentState.mascot` (onboarding, reflection timing)
 
@@ -493,32 +493,33 @@ type PuzzleSummary \= {
 
 ### **Role**
 
-“Given a quadrant (FORM/MOTION/EXPRESSION/FUNCTION) and a category (Clarify/Expand/Refine/Connect), propose 1–3 candidate puzzle pieces that help the designer move forward.”
+"Given a quadrant (FORM/MOTION/EXPRESSION/FUNCTION) and the puzzle session's type (Clarify/Expand/Refine), propose 1–3 candidate puzzle pieces that help the designer move forward."
+
+**IMPORTANT**: The agent receives the puzzle TYPE from the SESSION, not per-piece. All pieces within a session follow that one type.
 
 ### **Trigger**
 
-* User drags from a quadrant hub and chooses “Ask AI”.
+* User clicks [+] in a quadrant hub.
 
 * Orchestrator decides to seed suggestions (e.g., quadrant is empty).
 
 ### **Context**
 
-{  
-  processAim: string  
-  mode: DesignMode  
-  category: PuzzlePieceCategory | "CONNECT"  
-  puzzle: {  
-    id: string  
-    centralQuestion: string  
-  }  
-  anchors: Array\<{ type: AnchorType; text: string }\>  
-  existingPiecesForMode: Array\<{  
-    category: PuzzlePieceCategory | "CONNECT"  
-    text: string  
-    userAnnotation?: string  
-    status: PieceStatus  
-  }\>  
-  preferenceStatsForModeCategory: PreferenceStats // from preferenceProfile  
+{
+  processAim: string
+  mode: DesignMode
+  puzzleType: PuzzleType  // CLARIFY | EXPAND | REFINE - from the SESSION
+  puzzle: {
+    id: string
+    centralQuestion: string
+  }
+  anchors: Array\<{ type: AnchorType; text: string }\>
+  existingPiecesForMode: Array\<{
+    text: string
+    userAnnotation?: string
+    status: PieceStatus
+  }\>
+  preferenceStatsForTypePlusMode: PreferenceStats // key: {puzzleType, mode}
 }
 
 ### **Obligations**
@@ -533,15 +534,13 @@ type PuzzleSummary \= {
 
   * FUNCTION → goals/constraints/audience
 
-* Respect **category semantics**:
+* Respect **puzzle type semantics** (session-level):
 
-  * Clarify → sharpen, make explicit.
+  * CLARIFY session → all pieces sharpen/clarify ("Should the design feel more geometric or organic?")
 
-  * Expand → new angles/options.
+  * EXPAND session → all pieces diverge/explore ("If this interface were an object, what would it feel like?")
 
-  * Refine → choose/prioritize/polish.
-
-  * Connect → relate this mode to another mode or to anchors.
+  * REFINE session → all pieces converge/choose ("From everything, what 2 visual elements *must* remain?")
 
 * Use `preferenceStats` as **soft hints**:
 
@@ -553,13 +552,13 @@ type PuzzleSummary \= {
 
 ### **Output**
 
-{  
-  pieces: Array\<{  
-    mode: DesignMode  
-    category: PuzzlePieceCategory | "CONNECT"  
-    text: string  
-    internalNote?: string  // for orchestrator debugging or future logic  
-  }\>  
+{
+  pieces: Array\<{
+    mode: DesignMode
+    // NOTE: NO category field - inherits from session's puzzleType
+    text: string
+    internalNote?: string  // for orchestrator debugging or future logic
+  }\>
 }
 
 **Store updates**
@@ -639,17 +638,18 @@ These are stored in `pieceEvents[]` and periodically aggregated.
 
 ## **4.2 PreferenceProfile**
 
-We maintain, per `(mode, category)`:
+We maintain, per `(puzzleType, mode)` (NOT per piece category):
 
-type PreferenceStats \= {  
-  suggested: number  
-  placed: number  
-  edited: number  
-  discarded: number  
-  connected: number  
+type PreferenceStats \= {
+  suggested: number
+  placed: number
+  edited: number
+  discarded: number
+  connected: number
 }
 
-type UserPreferenceProfile \= Record\<string /\* JSON.stringify({mode, category}) \*/, PreferenceStats\>
+// Key is now {puzzleType, mode} since pieces inherit type from session
+type UserPreferenceProfile \= Record\<string /\* JSON.stringify({puzzleType, mode}) \*/, PreferenceStats\>
 
 Orchestrator updates:
 
@@ -669,19 +669,19 @@ Orchestrator updates:
 
 * **Quadrant Piece Agent** gets a short natural-language hint derived from stats:
 
-  * e.g. “User often discards long EXPRESSION-EXPAND prompts; keep suggestions short and concrete.”
+  * e.g. "User often discards FORM pieces in EXPAND sessions; keep suggestions shorter."
 
 * **Puzzle Designer Agent** uses hints to:
 
-  * seed categories the user tends to connect with (high `connected`),
+  * suggest puzzle types the user tends to connect with (high `connected` in that type),
 
-  * sometimes introduce a contrasting category to avoid tunnel vision.
+  * sometimes suggest a different type to avoid tunnel vision.
 
 * **Mascot Reflection** may mention patterns:
 
-  * e.g. “You keep refining EXPRESSION but rarely explore MOTION; want to try a motion puzzle next?”
+  * e.g. "You've done several CLARIFY puzzles but no EXPAND puzzles; want to try expanding options next?"
 
-All of this stays within the project’s local JSON; no global profile.
+All of this stays within the project's local JSON; no global profile.
 
 ---
 
@@ -735,13 +735,13 @@ Same as Flow B, except step 2 uses **Mascot (suggested)** and may short-circuit 
 
 ## **Flow D: In-Puzzle Assistance**
 
-1. UI: user drags from quadrant hub → “Ask AI” (`mode`, `category`).
+1. UI: user clicks [+] in quadrant hub → request pieces for `mode` (puzzle type comes from SESSION).
 
-2. Orchestrator collects context (processAim, puzzle, anchors, existing pieces for mode, `preferenceStatsForModeCategory`).
+2. Orchestrator collects context (processAim, puzzle with type, anchors, existing pieces for mode, `preferenceStatsForTypePlusMode`).
 
-3. Calls **Quadrant Piece Agent**.
+3. Calls **Quadrant Piece Agent** with `{mode, puzzleType}`.
 
-4. Agent returns 1–3 candidate pieces.
+4. Agent returns 1–3 candidate pieces appropriate to the session's puzzle type.
 
 5. Orchestrator inserts them into `puzzlePieces[]` as `status:"SUGGESTED"`; UI shows them as draggable.
 
@@ -751,7 +751,7 @@ Same as Flow B, except step 2 uses **Mascot (suggested)** and may short-circuit 
 
    * Logs `PieceEvent`.
 
-   * Updates `preferenceProfile` counters.
+   * Updates `preferenceProfile` counters (keyed by puzzleType + mode).
 
 ---
 

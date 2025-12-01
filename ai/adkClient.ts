@@ -51,9 +51,11 @@ const makeMockClient = (): LLMClient => ({
       });
     }
     if (prompt.includes("Quadrant Piece Agent")) {
+      // Return STATEMENTS (陈述式), not questions
       return JSON.stringify({
         pieces: [
-          { mode: "EXPRESSION", category: "CLARIFY", text: "Which 3 emotions matter most?" },
+          { mode: "EXPRESSION", text: "Calm confidence over excitement" },
+          { mode: "EXPRESSION", text: "Professional warmth balanced with clarity" },
         ],
       });
     }

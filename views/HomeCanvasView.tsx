@@ -39,7 +39,7 @@ const fromDomainFragment = (f: DomainFragment): FragmentData => ({
   position: f.position,
   size: f.size || { width: 200, height: 150 },
   content: f.content,
-  title: f.type === "IMAGE" ? "Image" : undefined,
+  title: f.title || (f.type === "IMAGE" ? "Image" : "Untitled"), // Use domain title
   leverId: f.labels?.[0] || undefined,
   zIndex: f.zIndex || 1,
 });
@@ -70,6 +70,7 @@ const toDomainFragment = (f: FragmentData): DomainFragment => ({
   id: f.id,
   projectId: PROJECT_ID,
   type: mapFragmentType(f.type),
+  title: f.title || 'Untitled', // Required field
   content: f.content,
   position: f.position,
   size: f.size,
@@ -233,6 +234,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
         id: p.id,
         projectId: PROJECT_ID,
         centralQuestion: p.title,
+        type: (p.type?.toUpperCase() || "CLARIFY") as "CLARIFY" | "EXPAND" | "REFINE",
         createdFrom: "user_request" as const,
         createdAt: now(),
       };
