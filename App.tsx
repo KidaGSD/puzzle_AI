@@ -7,7 +7,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HomeCanvasView } from './views/HomeCanvasView';
 import { PuzzleSessionView } from './views/PuzzleSessionView';
 import { LoadingTransition } from './components/common/LoadingTransition';
+import { PuzzleSummaryPopup } from './components/puzzle/PuzzleSummaryPopup';
 import { contextStore, eventBus, ensureOrchestrator, getPuzzleSyncInstance } from './store/runtime';
+import { PuzzleSummary, PuzzleType } from './domain/models';
 
 // View types
 type AppView = 'canvas' | 'puzzle';
@@ -19,6 +21,13 @@ interface AppState {
   transitionMessage: string;
 }
 
+// Summary popup state
+interface SummaryPopupState {
+  isVisible: boolean;
+  summary: PuzzleSummary | null;
+  puzzleType: PuzzleType;
+}
+
 export default function App() {
   // View state
   const [appState, setAppState] = useState<AppState>({
@@ -26,6 +35,13 @@ export default function App() {
     activePuzzleId: null,
     isTransitioning: false,
     transitionMessage: '',
+  });
+
+  // Summary popup state
+  const [summaryPopup, setSummaryPopup] = useState<SummaryPopupState>({
+    isVisible: false,
+    summary: null,
+    puzzleType: 'CLARIFY',
   });
 
   // Ref for orchestrator cleanup
@@ -40,8 +56,28 @@ export default function App() {
     console.log('[app] orchestrator attached');
     console.log('[app] Fragments in store:', contextStore.getState().fragments.length);
 
+    // Subscribe to PUZZLE_SESSION_COMPLETED to show summary popup
+    const unsubscribe = eventBus.subscribe((event) => {
+      if (event.type === 'PUZZLE_SESSION_COMPLETED') {
+        const payload = event.payload as { puzzleId: string; summary: PuzzleSummary };
+        console.log('[app] PUZZLE_SESSION_COMPLETED received:', payload);
+
+        // Get puzzle type
+        const puzzle = contextStore.getState().puzzles.find(p => p.id === payload.puzzleId);
+        const puzzleType: PuzzleType = puzzle?.type || 'CLARIFY';
+
+        // Show summary popup
+        setSummaryPopup({
+          isVisible: true,
+          summary: payload.summary,
+          puzzleType,
+        });
+      }
+    });
+
     return () => {
       console.log('[app] cleaning up orchestrator');
+      unsubscribe();
       // Don't call detach - singleton pattern persists across re-renders
     };
   }, []);
@@ -127,6 +163,15 @@ export default function App() {
     }, 1200);
   };
 
+  // Close summary popup
+  const handleCloseSummaryPopup = () => {
+    setSummaryPopup({
+      isVisible: false,
+      summary: null,
+      puzzleType: 'CLARIFY',
+    });
+  };
+
   return (
     <>
       {/* Loading Transition Overlay */}
@@ -141,6 +186,15 @@ export default function App() {
         <PuzzleSessionView
           puzzleId={appState.activePuzzleId!}
           onExit={handleExitPuzzle}
+        />
+      )}
+
+      {/* Summary Popup */}
+      {summaryPopup.isVisible && summaryPopup.summary && (
+        <PuzzleSummaryPopup
+          summary={summaryPopup.summary}
+          puzzleType={summaryPopup.puzzleType}
+          onClose={handleCloseSummaryPopup}
         />
       )}
     </>

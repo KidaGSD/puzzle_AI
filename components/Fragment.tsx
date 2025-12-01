@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
-import { GripVertical, Link2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X } from 'lucide-react';
 import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
@@ -10,6 +10,7 @@ interface FragmentProps {
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   onResizeStart: (e: React.MouseEvent, id: string) => void;
   onUpdate: (id: string, content: string) => void;
+  onTitleUpdate?: (id: string, title: string) => void;
   leverColor?: string;
   summary?: string;
   tags?: string[];
@@ -23,13 +24,57 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   onMouseDown,
   onResizeStart,
   onUpdate,
+  onTitleUpdate,
   leverColor,
   summary,
   tags,
   onDelete
 }, ref) => {
   const [localContent, setLocalContent] = useState(data.content);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [localTitle, setLocalTitle] = useState(data.title || '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync local title when data changes
+  useEffect(() => {
+    if (!isEditingTitle) {
+      setLocalTitle(data.title || '');
+    }
+  }, [data.title, isEditingTitle]);
+
+  // Focus title input when editing starts
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus();
+      titleInputRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  // Handle title save
+  const handleTitleSave = () => {
+    setIsEditingTitle(false);
+    if (localTitle.trim() !== data.title && onTitleUpdate) {
+      onTitleUpdate(data.id, localTitle.trim());
+    }
+  };
+
+  // Handle title cancel
+  const handleTitleCancel = () => {
+    setIsEditingTitle(false);
+    setLocalTitle(data.title || '');
+  };
+
+  // Handle title key events
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleTitleSave();
+    }
+    if (e.key === 'Escape') {
+      handleTitleCancel();
+    }
+  };
 
   // Auto-resize text area
   useEffect(() => {
@@ -72,29 +117,85 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
       }}
       onMouseDown={(e) => onMouseDown(e, data.id)}
     >
-      {/* Top Handle / Lever Indicator - Hide for Frame unless selected? Or just different style? */}
+      {/* Top Handle / Title Bar - Hide for Frame */}
       {!isFrame && (
-        <div className="h-6 w-full bg-gray-50 rounded-t-lg border-b border-gray-100 flex items-center justify-between px-2 cursor-grab active:cursor-grabbing relative shrink-0">
+        <div className="h-8 w-full bg-gray-50 rounded-t-lg border-b border-gray-100 flex items-center px-2 cursor-grab active:cursor-grabbing relative shrink-0 gap-1.5">
           {/* Lever Pip */}
-          <div className="flex items-center gap-2">
-            {leverColor ? (
-              <div
-                className="w-2.5 h-2.5 rounded-full shadow-sm border border-black/10"
-                style={{ backgroundColor: leverColor }}
-              />
+          {leverColor ? (
+            <div
+              className="w-2.5 h-2.5 rounded-full shadow-sm border border-black/10 shrink-0"
+              style={{ backgroundColor: leverColor }}
+            />
+          ) : (
+            <div className="w-2.5 h-2.5 rounded-full bg-gray-200 border border-black/5 shrink-0" />
+          )}
+
+          {/* AI Title - Editable */}
+          <div className="flex-1 min-w-0 flex items-center">
+            {isEditingTitle ? (
+              <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={localTitle}
+                  onChange={(e) => setLocalTitle(e.target.value)}
+                  onKeyDown={handleTitleKeyDown}
+                  onBlur={handleTitleSave}
+                  className="flex-1 text-[11px] font-medium text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  placeholder="Fragment title..."
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+                <button
+                  onClick={handleTitleSave}
+                  className="p-0.5 text-green-600 hover:text-green-700"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <Check size={12} />
+                </button>
+                <button
+                  onClick={handleTitleCancel}
+                  className="p-0.5 text-gray-400 hover:text-gray-600"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ) : (
-              <div className="w-2.5 h-2.5 rounded-full bg-gray-200 border border-black/5" />
+              <span
+                className="text-[11px] font-medium text-gray-600 truncate cursor-text"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditingTitle(true);
+                }}
+                title={localTitle || 'Click to add title'}
+              >
+                {localTitle || <span className="text-gray-400 italic">Untitled</span>}
+              </span>
             )}
           </div>
 
-          <GripVertical size={14} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+          {/* Edit button (visible on hover) */}
+          {!isEditingTitle && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditingTitle(true);
+              }}
+              className="p-1 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              title="Edit title"
+            >
+              <Edit2 size={12} />
+            </button>
+          )}
+
+          <GripVertical size={14} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
 
           <button
             onClick={(e) => {
               e.stopPropagation();
               if (onDelete) onDelete(data.id);
             }}
-            className="w-6 h-6 flex items-center justify-center text-gray-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100"
+            className="p-1 text-gray-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100 shrink-0"
             title="Delete fragment"
           >
             <Trash2 size={14} />

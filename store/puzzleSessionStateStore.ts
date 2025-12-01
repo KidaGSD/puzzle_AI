@@ -6,11 +6,14 @@
  */
 
 import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
 import {
   PuzzleSessionState,
   QuadrantAgentPiece,
   DesignMode,
   PuzzleType,
+  Anchor,
+  AnchorType,
 } from '../domain/models';
 import { QuadrantType, PiecePriority } from '../types';
 
@@ -24,6 +27,12 @@ interface PuzzleSessionStateStore {
   sessionState: PuzzleSessionState | null;
   isGenerating: boolean;
 
+  // Anchors (STARTING/WHY and SOLUTION/WHAT)
+  anchors: {
+    starting: Anchor | null;
+    solution: Anchor | null;
+  };
+
   // Pre-generated pieces pool per quadrant
   preGeneratedPieces: {
     form: PreGeneratedPiece[];
@@ -35,6 +44,11 @@ interface PuzzleSessionStateStore {
   // Actions
   setSessionState: (state: PuzzleSessionState) => void;
   setGenerating: (generating: boolean) => void;
+
+  // Anchor management
+  updateAnchor: (type: AnchorType, text: string) => void;
+  getAnchor: (type: AnchorType) => Anchor | null;
+  getAnchors: () => Anchor[];
 
   // Get next available piece for a quadrant
   getNextPiece: (quadrant: QuadrantType) => PreGeneratedPiece | null;
@@ -60,6 +74,11 @@ const quadrantToMode = (quadrant: QuadrantType): DesignMode => {
 export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, get) => ({
   sessionState: null,
   isGenerating: false,
+
+  anchors: {
+    starting: null,
+    solution: null,
+  },
 
   preGeneratedPieces: {
     form: [],
@@ -110,6 +129,52 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
 
   setGenerating: (generating) => set({ isGenerating: generating }),
 
+  // Anchor management
+  updateAnchor: (type, text) => {
+    const { sessionState, anchors } = get();
+    const puzzleId = sessionState?.session_id || '';
+    const key = type === 'STARTING' ? 'starting' : 'solution';
+    const existingAnchor = anchors[key];
+
+    if (existingAnchor) {
+      // Update existing anchor text
+      set({
+        anchors: {
+          ...anchors,
+          [key]: { ...existingAnchor, text },
+        },
+      });
+    } else {
+      // Create new anchor
+      const newAnchor: Anchor = {
+        id: uuidv4(),
+        puzzleId,
+        type,
+        text,
+      };
+      set({
+        anchors: {
+          ...anchors,
+          [key]: newAnchor,
+        },
+      });
+    }
+    console.log(`[puzzleSessionStateStore] Updated ${type} anchor: "${text.slice(0, 30)}..."`);
+  },
+
+  getAnchor: (type) => {
+    const { anchors } = get();
+    return type === 'STARTING' ? anchors.starting : anchors.solution;
+  },
+
+  getAnchors: () => {
+    const { anchors } = get();
+    const result: Anchor[] = [];
+    if (anchors.starting) result.push(anchors.starting);
+    if (anchors.solution) result.push(anchors.solution);
+    return result;
+  },
+
   getNextPiece: (quadrant) => {
     const { preGeneratedPieces } = get();
     const pieces = preGeneratedPieces[quadrant];
@@ -154,6 +219,10 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
     set({
       sessionState: null,
       isGenerating: false,
+      anchors: {
+        starting: null,
+        solution: null,
+      },
       preGeneratedPieces: {
         form: [],
         motion: [],

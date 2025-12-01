@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Puzzle, Lever } from '../types';
 import { ChevronRight, HelpCircle, CheckCircle2, Target, Sparkles, Filter } from 'lucide-react';
-import { PuzzleSummary } from '../domain/models';
+import { PuzzleSummary, PuzzleType } from '../domain/models';
 
 interface PuzzleDeckProps {
   activeLeverId: string | null;
@@ -34,6 +34,67 @@ const PUZZLE_TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string;
   },
 };
 
+// Summary hover popup for finished puzzles
+interface SummaryHoverPopupProps {
+  summary: PuzzleSummary;
+  puzzleType: string;
+}
+
+const SummaryHoverPopup: React.FC<SummaryHoverPopupProps> = ({ summary, puzzleType }) => {
+  const typeConfig = PUZZLE_TYPE_CONFIG[puzzleType.toLowerCase()] || PUZZLE_TYPE_CONFIG.clarify;
+
+  return (
+    <div
+      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-xl p-3 w-[220px] z-[100] pointer-events-none"
+      style={{
+        animation: 'fadeInUp 0.2s ease-out',
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: typeConfig.bgColor }}
+        >
+          <CheckCircle2 size={14} style={{ color: typeConfig.color }} />
+        </div>
+        <span className="text-xs font-bold text-gray-600">{summary.title || 'Puzzle Summary'}</span>
+      </div>
+
+      {/* Direction */}
+      <div className="text-xs text-gray-700 leading-relaxed mb-2">
+        {summary.oneLine || summary.directionStatement?.slice(0, 100)}
+        {summary.directionStatement && summary.directionStatement.length > 100 ? '...' : ''}
+      </div>
+
+      {/* Key reasons (max 2) */}
+      {summary.reasons && summary.reasons.length > 0 && (
+        <div className="space-y-1">
+          {summary.reasons.slice(0, 2).map((reason, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-[10px] text-gray-500">
+              <div
+                className="w-1 h-1 rounded-full mt-1.5 shrink-0"
+                style={{ backgroundColor: typeConfig.color }}
+              />
+              <span className="line-clamp-1">{reason}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Arrow pointing down */}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-white"></div>
+
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translate(-50%, 10px); }
+          to { opacity: 1; transform: translate(-50%, 0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
 export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, levers, puzzleSummaries = [], onSelectPuzzle }) => {
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 
@@ -63,7 +124,9 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
       >
         {displayPuzzles.map((puzzle, index) => {
           const leverColor = getLeverColor(puzzle.leverId);
-          const isFinished = puzzleSummaries.some(s => s.puzzleId === puzzle.id);
+          const puzzleSummary = puzzleSummaries.find(s => s.puzzleId === puzzle.id);
+          const isFinished = !!puzzleSummary;
+          const isHovered = hoveredIndex === index;
 
           // Calculate offset based on hover state
           let translateY = 'translateY(120px)'; // Default peek height (shows more top)
@@ -154,6 +217,13 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                 style={{ zIndex: -1, backgroundColor: 'rgba(255,255,255,0.3)' }}
               ></div>
 
+              {/* Summary Hover Popup for Finished Puzzles */}
+              {isFinished && isHovered && puzzleSummary && (
+                <SummaryHoverPopup
+                  summary={puzzleSummary}
+                  puzzleType={puzzle.type || 'clarify'}
+                />
+              )}
             </div>
           );
         })}

@@ -2,7 +2,30 @@ import React, { useState, useEffect, useRef } from 'react'
 import { MascotProposal } from '../../ai/agents/mascotAgent'
 import { eventBus } from '../../store/runtime'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Sparkles, MessageCircle, ArrowRight, Shuffle } from 'lucide-react'
+import { X, Sparkles, MessageCircle, ArrowRight, Shuffle, HelpCircle, Zap, Filter } from 'lucide-react'
+import { PuzzleType } from '../../domain/models'
+
+// Puzzle type styling
+const PUZZLE_TYPE_STYLES: Record<PuzzleType, { icon: React.ReactNode; color: string; bgColor: string; label: string }> = {
+  CLARIFY: {
+    icon: <HelpCircle size={14} />,
+    color: '#3B82F6',
+    bgColor: 'rgba(59, 130, 246, 0.15)',
+    label: 'CLARIFY',
+  },
+  EXPAND: {
+    icon: <Zap size={14} />,
+    color: '#F97316',
+    bgColor: 'rgba(249, 115, 22, 0.15)',
+    label: 'EXPAND',
+  },
+  REFINE: {
+    icon: <Filter size={14} />,
+    color: '#9333EA',
+    bgColor: 'rgba(147, 51, 234, 0.15)',
+    label: 'REFINE',
+  },
+}
 
 interface MascotPanelProps {
   isOpen: boolean
@@ -208,11 +231,27 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
               {/* PROPOSAL VIEW */}
               {view === 'proposal' && proposal && (
                 <div className="flex flex-col">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600">
-                      <Sparkles size={16} />
+                  {/* Header with Puzzle Type Badge */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600">
+                        <Sparkles size={16} />
+                      </div>
+                      <span className="text-sm font-bold text-green-700 uppercase tracking-wide">Puzzle Ready</span>
                     </div>
-                    <span className="text-sm font-bold text-green-700 uppercase tracking-wide">Puzzle Ready</span>
+                    {/* Puzzle Type Badge */}
+                    {proposal.puzzleType && (
+                      <div
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide"
+                        style={{
+                          backgroundColor: PUZZLE_TYPE_STYLES[proposal.puzzleType]?.bgColor || '#f3f4f6',
+                          color: PUZZLE_TYPE_STYLES[proposal.puzzleType]?.color || '#6b7280',
+                        }}
+                      >
+                        {PUZZLE_TYPE_STYLES[proposal.puzzleType]?.icon}
+                        {proposal.puzzleType}
+                      </div>
+                    )}
                   </div>
 
                   <h3 className="text-xl font-bold text-gray-900 leading-tight mb-3">

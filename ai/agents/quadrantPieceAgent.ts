@@ -79,10 +79,10 @@ const buildPrompt = (input: QuadrantPieceInput) => {
     }
 
     if (imageFragments.length > 0) {
-      fragmentSection += `\nImage fragments from canvas (can be referenced in output):\n`;
+      fragmentSection += `\nImage fragments from canvas (can be referenced in output - include imageUrl!):\n`;
       imageFragments.slice(0, 3).forEach((f, i) => {
         const title = f.summary?.slice(0, 30) || "Image";
-        fragmentSection += `  ${i + 1}. ID: "${f.id}", Title: "${title}", Description: "${f.summary || 'Image'}"\n`;
+        fragmentSection += `  ${i + 1}. ID: "${f.id}", Title: "${title}", Description: "${f.summary || 'Image'}", ImageURL: "${f.content}"\n`;
         fragmentList.push({ id: f.id, title, summary: f.summary || "Image" });
       });
     }
@@ -110,11 +110,14 @@ const buildPrompt = (input: QuadrantPieceInput) => {
      ✓ "Minimalist form language" (3 words)
      ✓ "Playful yet professional tone" (4 words)
 
-2. SOURCE FRAGMENT REFERENCE (optional):
+2. SOURCE FRAGMENT REFERENCE (optional but encouraged):
    - If your insight is derived from a canvas fragment, include:
      - fragmentId: the fragment's ID (from list below)
      - fragmentTitle: original title from canvas
      - fragmentSummary: 1-2 sentence explanation of how this fragment influenced the insight
+   - For IMAGE fragments specifically:
+     - Include imageUrl: the image URL from the fragment
+     - The title should describe what the image represents (e.g., "Warm color palette")
 
 3. PRIORITY ASSIGNMENT (1-6):
    - P1-P2: Core insights, most relevant to central question
@@ -149,7 +152,8 @@ Return JSON with this structure:
       "priority": 1-6,
       "fragmentId": "optional-fragment-id",
       "fragmentTitle": "optional-fragment-title",
-      "fragmentSummary": "optional-1-2-sentence-explanation"
+      "fragmentSummary": "optional-1-2-sentence-explanation",
+      "imageUrl": "optional-if-from-image-fragment"
     }
   ]
 }`;

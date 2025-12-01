@@ -510,11 +510,29 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
               style={{ minWidth: '100px' }}
             />
           ) : data.imageUrl ? (
-            <div className="relative w-full h-full">
-              <div className="bg-black/50 rounded-lg px-2 py-1 backdrop-blur-sm">
+            <div className="relative w-full h-full flex flex-col items-center justify-center gap-1">
+              {/* Image thumbnail background */}
+              <div
+                className="absolute inset-0 rounded-lg overflow-hidden opacity-40"
+                style={{
+                  backgroundImage: `url(${data.imageUrl})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
+              />
+              {/* Title overlay */}
+              <div className="relative bg-black/60 rounded-lg px-2 py-1 backdrop-blur-sm">
                 <span className="text-white font-bold text-[10px] uppercase tracking-wider text-center drop-shadow-lg">
                   {displayTitle || 'Image'}
                 </span>
+              </div>
+              {/* Small image icon indicator */}
+              <div className="relative text-white/70">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21,15 16,10 5,21"/>
+                </svg>
               </div>
             </div>
           ) : displayTitle ? (

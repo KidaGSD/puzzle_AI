@@ -10,7 +10,7 @@ import { Toolbar } from '../components/Toolbar';
 import { TopBar } from '../components/TopBar';
 import { PuzzleDeck } from '../components/PuzzleDeck';
 import { Fragment } from '../components/Fragment';
-import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE } from '../types';
+import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE, PuzzleSessionType } from '../types';
 import { contextStore, eventBus, setMascotProposalListener } from '../store/runtime';
 import { Fragment as DomainFragment, PuzzleSummary } from '../domain/models';
 import { SummaryCard } from '../components/SummaryCard';
@@ -464,6 +464,10 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
     setFragments(prev => prev.map(f => f.id === id ? { ...f, content } : f));
   };
 
+  const handleUpdateFragmentTitle = (id: string, title: string) => {
+    setFragments(prev => prev.map(f => f.id === id ? { ...f, title } : f));
+  };
+
   // Mascot handlers
   const handleMascotOpen = () => {
     setIsMascotOpen(true);
@@ -475,16 +479,19 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   };
 
   const handleStartPuzzle = (proposal: MascotProposal) => {
+    // Use puzzleType from proposal, defaulting to 'clarify' for backwards compatibility
+    const puzzleType = proposal.puzzleType?.toLowerCase() as PuzzleSessionType || 'clarify';
+
     const newPuzzle: Puzzle = {
       id: `P${puzzles.length + 1}`,
       leverId: activeLeverId || levers[0]?.id || 'L1',
       title: proposal.centralQuestion,
-      type: 'clarify',
+      type: puzzleType,
       description: proposal.rationale,
     };
 
     setPuzzles(prev => [...prev, newPuzzle]);
-    addLog(`Created puzzle: ${newPuzzle.title.slice(0, 30)}...`);
+    addLog(`Created ${puzzleType.toUpperCase()} puzzle: ${newPuzzle.title.slice(0, 30)}...`);
 
     setIsMascotOpen(false);
     setMascotProposal(null);
@@ -587,6 +594,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
               onMouseDown={handleFragmentMouseDown}
               onResizeStart={handleResizeStart}
               onUpdate={handleUpdateFragment}
+              onTitleUpdate={handleUpdateFragmentTitle}
               leverColor={levers.find(l => l.id === fragment.leverId)?.color}
               summary={storeFragments.find(sf => sf.id === fragment.id)?.summary}
               tags={storeFragments.find(sf => sf.id === fragment.id)?.tags}

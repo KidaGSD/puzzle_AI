@@ -7,6 +7,7 @@ import { runPuzzleDesignerAgent } from "./agents/puzzleDesignerAgent";
 import { runQuadrantPieceAgent, FragmentContext } from "./agents/quadrantPieceAgent";
 // Multi-agent system imports
 import { runPuzzleSessionAgent, regenerateQuadrant } from "./agents/puzzleSessionAgent";
+import { runPuzzleSynthesisAgent, PuzzleSynthesisInput } from "./agents/puzzleSynthesisAgent";
 import {
   Fragment,
   UIEvent,
@@ -18,7 +19,9 @@ import {
   PuzzleSessionInput,
   PuzzleSessionState,
   FragmentSummary,
+  Anchor,
 } from "../domain/models";
+import { usePuzzleSessionStateStore } from "../store/puzzleSessionStateStore";
 import { MascotProposal } from "./agents/mascotAgent";
 import { useGameStore } from "../store/puzzleSessionStore";
 import { COLORS, ALL_SHAPES } from "../constants/puzzleGrid";
@@ -125,6 +128,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       if (suggestion.shouldSuggest && suggestion.centralQuestion) {
         notifyMascotProposal({
           centralQuestion: suggestion.centralQuestion,
+          puzzleType: suggestion.puzzleType || "CLARIFY",
           primaryModes: suggestion.primaryModes || [],
           rationale: suggestion.rationale || "",
         });
@@ -137,21 +141,51 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const payload: any = event.payload || {};
     const puzzleId = payload.puzzleId || state.puzzles[0]?.id;
     if (!puzzleId) return;
-    console.info("[orchestrator] PUZZLE_FINISH_CLICKED", { puzzleId });
+
+    // Get puzzle info
+    const puzzle = state.puzzles.find(p => p.id === puzzleId);
+    const puzzleType: PuzzleType = puzzle?.type || 'CLARIFY';
+
+    // Get anchors from puzzleSessionStateStore (new anchor system)
+    const sessionStateStore = usePuzzleSessionStateStore.getState();
+    const sessionAnchors = sessionStateStore.getAnchors();
+
+    // Get placed pieces from game store
+    const gameStore = useGameStore.getState();
+    const placedPieces = gameStore.pieces.map(p => ({
+      quadrant: p.quadrant,
+      text: p.text || p.title || '',
+      content: p.content,
+      userAnnotation: undefined, // Future: add user annotations
+    }));
+
+    console.info("[orchestrator] PUZZLE_FINISH_CLICKED", {
+      puzzleId,
+      puzzleType,
+      anchors: sessionAnchors.length,
+      pieces: placedPieces.length,
+    });
+
     try {
-      const summary = await runPuzzleDesignerAgent(
-        {
-          task: "summarize",
-          processAim: state.project.processAim,
-          puzzle: { id: puzzleId, centralQuestion: payload.centralQuestion || "What is the core bet?" },
-          anchors: payload.anchors || [],
-          pieces: payload.pieces || [],
-        },
-        client,
-      );
+      // Build input for synthesis agent
+      const synthesisInput: PuzzleSynthesisInput = {
+        puzzleId,
+        puzzleType,
+        centralQuestion: payload.centralQuestion || puzzle?.centralQuestion || "What is the core question?",
+        processAim: state.project.processAim,
+        anchors: sessionAnchors,
+        placedPieces,
+      };
+
+      // Run synthesis agent
+      const summary = await runPuzzleSynthesisAgent(synthesisInput, client);
+
+      // Store summary
       store.setState(draft => {
         draft.puzzleSummaries = draft.puzzleSummaries.filter(s => s.puzzleId !== puzzleId);
-        draft.puzzleSummaries.push({ puzzleId, ...(summary as any) });
+        draft.puzzleSummaries.push(summary);
+
+        // Mark fragments as linked to this puzzle
         if (Array.isArray(payload.fragmentIds)) {
           payload.fragmentIds.forEach((fid: string) => {
             const frag = draft.fragments.find(f => f.id === fid);
@@ -162,7 +196,18 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
           });
         }
       });
+
       console.info("[orchestrator] puzzle summary stored", summary);
+
+      // Emit event for UI to show popup (handled by runtime.ts or App.tsx)
+      bus.emit({
+        type: 'PUZZLE_SESSION_COMPLETED',
+        payload: {
+          puzzleId,
+          summary,
+        },
+        timestamp: Date.now(),
+      });
     } catch (err) {
       console.error("[orchestrator] puzzle summarize failed", err);
     }
@@ -259,14 +304,14 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     output.pieces.forEach((p) => {
       const pieceId = uuidv4();
       const shape = ALL_SHAPES[Math.floor(Math.random() * ALL_SHAPES.length)];
-      // Use text field as the main content (the question/prompt)
-      const text = p.text || p.title || "What's the key insight?";
+      // Use text field as the main content (the declarative statement)
+      const text = p.text || p.title || "Key insight here";
 
       // Find a valid position for this piece based on quadrant
       const position = findValidPosition(quadrant, shape, gameStore);
 
       if (position) {
-        // Add to visual layer (puzzleSessionStore)
+        // Add to visual layer (puzzleSessionStore) with ALL fragment fields
         gameStore.addPiece({
           id: pieceId,
           quadrant,
@@ -275,11 +320,17 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
           cells: shape,
           text,
           source: 'ai',
-          imageUrl: p.imageUrl,
+          priority: p.priority,
+          // ═══════════════════════════════════════════════════════════
+          // SOURCE FRAGMENT FIELDS (for summary popup - distinct from title!)
+          // ═══════════════════════════════════════════════════════════
           fragmentId: p.fragmentId,
+          fragmentTitle: p.fragmentTitle,
+          fragmentSummary: p.fragmentSummary,
+          imageUrl: p.imageUrl,
         });
 
-        console.log(`[orchestrator] Created visual piece: ${pieceId} at (${position.x}, ${position.y}) - "${text}"`);
+        console.log(`[orchestrator] Created visual piece: ${pieceId} at (${position.x}, ${position.y}) - "${text}" (fragment: ${p.fragmentId || 'none'})`);
       }
 
       // Also store in domain layer for persistence

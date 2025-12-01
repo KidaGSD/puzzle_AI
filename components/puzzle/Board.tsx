@@ -32,6 +32,7 @@ export const Board: React.FC<BoardProps> = ({
         <CenterCard
           centralQuestion={puzzle?.centralQuestion}
           processAim={processAim}
+          puzzleType={puzzle?.type}
         />
 
         {/* Puzzle Pieces */}
