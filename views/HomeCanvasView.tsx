@@ -309,11 +309,14 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
       if (rect) {
         const x = (e.clientX - rect.left - offset.x) / scale;
         const y = (e.clientY - rect.top - offset.y) / scale;
-        const newId = createFragment(FragmentType.FRAME, x, y, undefined, { width: 0, height: 0 });
+        // Start with a visible minimum size so the frame is visible during drag
+        const initialSize = { width: 100, height: 80 };
+        const newId = createFragment(FragmentType.FRAME, x, y, undefined, initialSize);
         setInteractionMode('RESIZE_FRAGMENT');
         setActiveId(newId);
         dragStartRef.current = { x: e.clientX, y: e.clientY };
-        initialDataRef.current = { x: 0, y: 0, w: 0, h: 0 };
+        initialDataRef.current = { x: 0, y: 0, w: initialSize.width, h: initialSize.height };
+        addLog(`Created frame at (${Math.round(x)}, ${Math.round(y)})`);
       }
     }
   };

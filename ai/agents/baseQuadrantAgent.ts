@@ -180,7 +180,19 @@ export const buildQuadrantPrompt = (input: QuadrantAgentInput): string => {
 
   return `You are the ${input.mode} Quadrant Agent for a design thinking puzzle app.
 
-=== CRITICAL RULE ===
+=== CRITICAL RULE #1: TITLE LENGTH (MANDATORY) ===
+EVERY piece title MUST be EXACTLY 2-5 WORDS. COUNT THE WORDS BEFORE OUTPUTTING.
+
+WORD COUNT EXAMPLES:
+  ✓ "Warm analog textures" = 3 words (VALID)
+  ✓ "Organic minimalism" = 2 words (VALID)
+  ✓ "Mobile-first responsive design" = 3 words (VALID)
+  ✓ "Calm confident presence" = 3 words (VALID)
+  ✗ "Earthy elegance meets modern simplicity" = 5+ words (TOO LONG - REJECT)
+  ✗ "Clean minimalist approach with organic elements" = 6 words (TOO LONG - REJECT)
+  ✗ "Warmth" = 1 word (TOO SHORT - REJECT)
+
+=== CRITICAL RULE #2: STATEMENTS ONLY ===
 Generate SHORT STATEMENTS, NOT questions.
 Each piece is an INSIGHT or ANSWER, not a prompt.
 NEVER end with a question mark (?).
@@ -188,7 +200,7 @@ NEVER end with a question mark (?).
 BAD examples (DO NOT generate):
 ${STATEMENT_EXAMPLES.bad.map((b) => `  ✗ "${b}"`).join("\n")}
 
-GOOD examples (follow this style):
+GOOD examples (follow this style - note: all 2-5 words):
 ${STATEMENT_EXAMPLES.good.map((g) => `  ✓ "${g}"`).join("\n")}
 
 === CONTEXT ===
@@ -241,13 +253,62 @@ Return ONLY valid JSON:
 
 CRITICAL - FRAGMENT CITATION REQUIREMENTS:
 1. saturation_level: "high" for priority 1-2, "medium" for 3-4, "low" for 5-6
-2. You MUST cite source fragments when your insight is influenced by them:
-   - fragment_id: Copy the exact ID from the fragments list above
-   - fragment_title: Copy the exact title from the fragments list
+2. YOU MUST cite source fragments - this is MANDATORY when fragments are provided:
+   - fragment_id: Copy the EXACT ID from the fragments list above (e.g., "frag-123")
+   - fragment_title: Copy the EXACT title from the fragments list
    - fragment_summary: 1 sentence explaining HOW this fragment influenced your insight
-3. For IMAGE fragments, also include image_url with the URL from the fragment
-4. If no specific fragment influenced an insight, you may omit the fragment fields
-5. At least 50% of your pieces should cite relevant fragments when fragments are provided`;
+3. For IMAGE fragments, ALSO include image_url with the URL from the fragment
+4. AT LEAST 60% of your pieces MUST cite a fragment (when fragments are provided)
+5. Only omit fragment fields if your insight is purely original (not influenced by any fragment)
+
+EXAMPLE with fragment citation (REQUIRED):
+{
+  "text": "Warm analog textures",
+  "priority": 2,
+  "saturation_level": "high",
+  "fragment_id": "frag-123",
+  "fragment_title": "Brand Color Palette",
+  "fragment_summary": "The earthy browns and greens in this mood board suggest natural warmth"
+}
+
+EXAMPLE without citation (only if no relevant fragment):
+{
+  "text": "Clean minimalist lines",
+  "priority": 4,
+  "saturation_level": "medium"
+}`;
+};
+
+// ========== Title Length Validation ==========
+
+/**
+ * Truncate title to max 5 words while preserving meaning
+ */
+const truncateTitle = (text: string, maxWords: number = 5): string => {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) return text;
+
+  // Take first maxWords words
+  const truncated = words.slice(0, maxWords).join(" ");
+  console.log(`[QuadrantAgent] Truncated title: "${text}" → "${truncated}"`);
+  return truncated;
+};
+
+/**
+ * Ensure title is at least 2 words
+ */
+const padTitle = (text: string, mode: string): string => {
+  const words = text.trim().split(/\s+/);
+  if (words.length >= 2) return text;
+
+  // Add a generic qualifier based on mode if only 1 word
+  const qualifiers: Record<string, string> = {
+    FORM: "approach",
+    MOTION: "flow",
+    EXPRESSION: "feel",
+    FUNCTION: "focus",
+  };
+  return `${text} ${qualifiers[mode] || "insight"}`;
 };
 
 // ========== Run Agent ==========
@@ -262,11 +323,18 @@ export const runQuadrantAgent = async (
     const cleaned = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned) as QuadrantAgentOutput;
 
-    // Validate and fix saturation levels
-    const pieces = parsed.pieces.map((p) => ({
-      ...p,
-      saturation_level: priorityToSaturation(p.priority as PiecePriority),
-    }));
+    // Validate and fix saturation levels + title length
+    const pieces = parsed.pieces.map((p) => {
+      // Enforce 2-5 word title length
+      let title = truncateTitle(p.text, 5);
+      title = padTitle(title, input.mode);
+
+      return {
+        ...p,
+        text: title,
+        saturation_level: priorityToSaturation(p.priority as PiecePriority),
+      };
+    });
 
     // Filter out any pieces that end with ?
     const validPieces = pieces.filter((p) => !p.text.trim().endsWith("?"));

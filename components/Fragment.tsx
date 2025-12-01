@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
-import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X } from 'lucide-react';
+import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X, Maximize2 } from 'lucide-react';
 import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
@@ -33,6 +33,7 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   const [localContent, setLocalContent] = useState(data.content);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [localTitle, setLocalTitle] = useState(data.title || '');
+  const [showImageModal, setShowImageModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -210,9 +211,30 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
             {data.title || 'Frame'}
           </div>
         ) : isImage ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded border border-dashed border-gray-200 overflow-hidden">
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded border border-dashed border-gray-200 overflow-hidden relative group/image">
             {data.content ? (
-              <img src={data.content} alt={data.title} className="w-full h-full object-cover pointer-events-none" />
+              <>
+                <img
+                  src={data.content}
+                  alt={data.title}
+                  className="w-full h-full object-contain cursor-zoom-in"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowImageModal(true);
+                  }}
+                />
+                {/* Expand button overlay */}
+                <button
+                  className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg opacity-0 group-hover/image:opacity-100 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowImageModal(true);
+                  }}
+                  title="View full size"
+                >
+                  <Maximize2 size={14} className="text-white" />
+                </button>
+              </>
             ) : (
               <>
                 <ImageIcon size={24} className="text-gray-300 mb-2" />
@@ -303,6 +325,37 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
           onMouseDown={(e) => onResizeStart(e, data.id)}
         >
           <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>
+        </div>
+      )}
+
+      {/* Image Modal for full-size view */}
+      {showImageModal && isImage && data.content && (
+        <div
+          className="fixed inset-0 z-[500] bg-black/90 flex items-center justify-center"
+          onClick={() => setShowImageModal(false)}
+        >
+          <div className="relative max-w-[95vw] max-h-[95vh]">
+            <img
+              src={data.content}
+              alt={data.title || 'Image'}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            {/* Close button */}
+            <button
+              className="absolute -top-4 -right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+              onClick={() => setShowImageModal(false)}
+              title="Close"
+            >
+              <X size={20} className="text-gray-700" />
+            </button>
+            {/* Image title */}
+            {data.title && (
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
+                <p className="text-white font-medium text-lg">{data.title}</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

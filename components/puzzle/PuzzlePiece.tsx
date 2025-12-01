@@ -365,7 +365,21 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
                 ) : data.content ? (
                   <p className="text-gray-300 text-sm leading-relaxed">{data.content}</p>
                 ) : (
-                  <p className="text-gray-500 text-sm italic">No source fragment linked</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 16v-4M12 8h.01"/>
+                      </svg>
+                      Source
+                    </div>
+                    <p className="text-gray-400 text-sm">
+                      {data.source === 'ai' ? 'AI-generated insight based on project context' : 'User-created piece'}
+                    </p>
+                    <p className="text-gray-500 text-xs italic">
+                      Tip: Add fragments to your canvas for richer AI insights
+                    </p>
+                  </div>
                 )}
 
                 {/* Metadata footer */}
