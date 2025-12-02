@@ -24,6 +24,7 @@ import { runFormQuadrantAgent } from "./formQuadrantAgent";
 import { runMotionQuadrantAgent } from "./motionQuadrantAgent";
 import { runExpressionQuadrantAgent } from "./expressionQuadrantAgent";
 import { runFunctionQuadrantAgent } from "./functionQuadrantAgent";
+import { validateCentralQuestion, isGenericQuestion } from "./outputValidation";
 
 // ========== Configuration ==========
 
@@ -78,20 +79,100 @@ const generateCentralQuestion = async (
     const raw = await client.generate(prompt, 0.7);
     const cleaned = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
-    return parsed.central_question || getDefaultCentralQuestion(input.puzzle_type);
+    const question = parsed.central_question;
+
+    // ========== Phase 4: Validate Central Question ==========
+    // Reject generic questions and require fragment grounding
+    if (question) {
+      if (isGenericQuestion(question)) {
+        console.warn(`[PuzzleSessionAgent] Rejected generic question: "${question}"`);
+        // Fall through to default
+      } else {
+        const validation = validateCentralQuestion(question, input.fragments_summary);
+        if (validation.isValid) {
+          return question;
+        } else {
+          console.warn(`[PuzzleSessionAgent] Question validation failed: ${validation.reason}`);
+        }
+      }
+    }
+
+    // Use fragment-grounded fallback
+    return getDefaultCentralQuestion(
+      input.puzzle_type,
+      input.fragments_summary,
+      input.process_aim
+    );
   } catch (error) {
     console.error("[PuzzleSessionAgent] Failed to generate central question:", error);
-    return getDefaultCentralQuestion(input.puzzle_type);
+    // Use fragment-grounded fallback instead of generic questions
+    return getDefaultCentralQuestion(
+      input.puzzle_type,
+      input.fragments_summary,
+      input.process_aim
+    );
   }
 };
 
-const getDefaultCentralQuestion = (puzzleType: PuzzleType): string => {
-  const defaults: Record<PuzzleType, string> = {
-    CLARIFY: "What's the core essence we need to define?",
-    EXPAND: "What possibilities haven't we explored yet?",
-    REFINE: "Which direction should we commit to?",
+/**
+ * Generate fallback central question from fragments when AI fails
+ * Uses actual fragment content instead of generic questions
+ */
+const getDefaultCentralQuestion = (
+  puzzleType: PuzzleType,
+  fragments?: FragmentSummary[],
+  processAim?: string
+): string => {
+  // Try to build question from fragment content
+  if (fragments && fragments.length > 0) {
+    const fragmentTitles = fragments.slice(0, 2).map(f => f.title).filter(Boolean);
+    const fragmentTags = fragments.flatMap(f => f.tags || []).slice(0, 3);
+
+    if (fragmentTitles.length > 0) {
+      const titleRef = fragmentTitles[0];
+      switch (puzzleType) {
+        case "CLARIFY":
+          return `What does "${titleRef}" mean for this project?`;
+        case "EXPAND":
+          return `What other directions does "${titleRef}" suggest?`;
+        case "REFINE":
+          return `How should we prioritize "${titleRef}" vs other ideas?`;
+      }
+    }
+
+    if (fragmentTags.length > 0) {
+      const tagRef = fragmentTags.slice(0, 2).join(", ");
+      switch (puzzleType) {
+        case "CLARIFY":
+          return `What defines the ${tagRef} direction?`;
+        case "EXPAND":
+          return `What else connects to ${tagRef}?`;
+        case "REFINE":
+          return `How do we focus on ${tagRef}?`;
+      }
+    }
+  }
+
+  // Use process aim if available
+  if (processAim) {
+    const aimWords = processAim.split(" ").slice(0, 5).join(" ");
+    switch (puzzleType) {
+      case "CLARIFY":
+        return `What's the core of: ${aimWords}...?`;
+      case "EXPAND":
+        return `What possibilities exist for: ${aimWords}...?`;
+      case "REFINE":
+        return `What's essential for: ${aimWords}...?`;
+    }
+  }
+
+  // Absolute minimal fallback - indicates AI couldn't generate
+  const fallbacks: Record<PuzzleType, string> = {
+    CLARIFY: "What needs defining? (Add fragments for better questions)",
+    EXPAND: "What else is possible? (Add fragments for better questions)",
+    REFINE: "What should we prioritize? (Add fragments for better questions)",
   };
-  return defaults[puzzleType];
+  return fallbacks[puzzleType];
 };
 
 // ========== Quadrant Agent Orchestration ==========

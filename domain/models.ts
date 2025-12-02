@@ -251,7 +251,7 @@ export interface QuadrantAgentInput {
  * text: 陈述式 statement, NOT a question (no ? ending)
  */
 export interface QuadrantAgentPiece {
-  text: string;              // Statement/insight (陈述式, no question marks)
+  text: string;              // Statement/insight (no question marks)
   priority: PiecePriority;   // 1-6, determines position and color
   saturation_level: SaturationLevel;
   // Source fragment reference (for summary popup)

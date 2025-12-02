@@ -13,7 +13,21 @@ export interface ImageInput {
 }
 
 /**
- * LLM Client interface with text and multimodal support
+ * JSON Schema type for structured output
+ * See: https://ai.google.dev/gemini-api/docs/structured-output
+ */
+export interface JsonSchema {
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
+  properties?: Record<string, JsonSchema & { description?: string }>;
+  items?: JsonSchema;
+  required?: string[];
+  enum?: string[];
+  description?: string;
+  additionalProperties?: boolean;
+}
+
+/**
+ * LLM Client interface with text, multimodal, and structured output support
  */
 export interface LLMClient {
   /** Generate text response from text prompt */
@@ -24,6 +38,25 @@ export interface LLMClient {
     images: ImageInput[],
     temperature?: number
   ): Promise<string>;
+  /**
+   * Generate structured JSON response with guaranteed schema conformance
+   * Uses Gemini's built-in JSON mode for reliable parsing
+   */
+  generateStructured<T>(
+    prompt: string,
+    schema: JsonSchema,
+    temperature?: number
+  ): Promise<T>;
+  /**
+   * Generate structured JSON response from text + images (VLM)
+   * Combines vision analysis with structured output
+   */
+  generateStructuredWithImages<T>(
+    prompt: string,
+    images: ImageInput[],
+    schema: JsonSchema,
+    temperature?: number
+  ): Promise<T>;
   /** Whether this is a mock client (no API key) */
   readonly isMock: boolean;
   /** The model being used */
@@ -141,6 +174,43 @@ const makeMockClient = (): LLMClient => ({
       colors: ["gray", "white"],
     });
   },
+  async generateStructured<T>(prompt: string, schema: JsonSchema): Promise<T> {
+    // Mock structured output - return empty object matching expected shape
+    const mockResultPromise = this.generate(prompt);
+    try {
+      const mockResult = await mockResultPromise;
+      return JSON.parse(mockResult) as T;
+    } catch {
+      // Return minimal valid structure based on schema type
+      if (schema.type === 'object') {
+        return {} as T;
+      }
+      if (schema.type === 'array') {
+        return [] as unknown as T;
+      }
+      return null as unknown as T;
+    }
+  },
+  async generateStructuredWithImages<T>(
+    prompt: string,
+    images: ImageInput[],
+    schema: JsonSchema
+  ): Promise<T> {
+    // Mock structured VLM output
+    const mockResultPromise = this.generateWithImages(prompt, images);
+    try {
+      const mockResult = await mockResultPromise;
+      return JSON.parse(mockResult) as T;
+    } catch {
+      if (schema.type === 'object') {
+        return {} as T;
+      }
+      if (schema.type === 'array') {
+        return [] as unknown as T;
+      }
+      return null as unknown as T;
+    }
+  },
 });
 
 export const createLLMClient = (): LLMClient => {
@@ -241,6 +311,120 @@ export const createLLMClient = (): LLMClient => {
       });
 
       return cleanText(res.text);
+    },
+
+    /**
+     * Generate structured JSON response with guaranteed schema conformance
+     * Uses Gemini's built-in JSON mode for reliable parsing
+     * See: https://ai.google.dev/gemini-api/docs/structured-output
+     *
+     * @param prompt - Text prompt describing what to generate
+     * @param schema - JSON Schema describing expected output structure
+     * @param temperature - Generation temperature (default 1.0)
+     */
+    async generateStructured<T>(
+      prompt: string,
+      schema: JsonSchema,
+      temperature = DEFAULT_TEMPERATURE
+    ): Promise<T> {
+      console.log(`[adkClient] Generating structured output with schema type: ${schema.type}`);
+
+      const res = await genAI.models.generateContent({
+        model: defaultModel,
+        contents: prompt,
+        config: {
+          temperature,
+          responseMimeType: "application/json",
+          responseSchema: schema as any,
+        },
+      });
+
+      const text = cleanText(res.text);
+      try {
+        return JSON.parse(text) as T;
+      } catch (error) {
+        console.error('[adkClient] Failed to parse structured output:', text);
+        throw new Error(`Structured output parsing failed: ${error}`);
+      }
+    },
+
+    /**
+     * Generate structured JSON response from text + images (VLM)
+     * Combines vision analysis with structured output for reliable parsing
+     *
+     * @param prompt - Text prompt describing what to analyze
+     * @param images - Array of images to analyze
+     * @param schema - JSON Schema describing expected output structure
+     * @param temperature - Generation temperature (default 1.0)
+     */
+    async generateStructuredWithImages<T>(
+      prompt: string,
+      images: ImageInput[],
+      schema: JsonSchema,
+      temperature = DEFAULT_TEMPERATURE
+    ): Promise<T> {
+      if (images.length === 0) {
+        // No images, fall back to text-only structured
+        return this.generateStructured(prompt, schema, temperature) as Promise<T>;
+      }
+
+      // Build multimodal content parts
+      const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+      // Add text prompt first
+      parts.push({ text: prompt });
+
+      // Add each image
+      for (const img of images) {
+        let base64Data: string;
+
+        if (img.base64Data) {
+          base64Data = img.base64Data;
+        } else if (img.url) {
+          try {
+            base64Data = await fetchImageAsBase64(img.url);
+          } catch (error) {
+            console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+            continue;
+          }
+        } else {
+          console.warn('[adkClient] Image input missing both url and base64Data, skipping');
+          continue;
+        }
+
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType,
+            data: base64Data,
+          },
+        });
+      }
+
+      // If all images failed, fall back to text-only structured
+      if (parts.length === 1) {
+        console.warn('[adkClient] All images failed to load, falling back to text-only structured');
+        return this.generateStructured(prompt, schema, temperature) as Promise<T>;
+      }
+
+      console.log(`[adkClient] Generating structured output with ${parts.length - 1} image(s)`);
+
+      const res = await genAI.models.generateContent({
+        model: defaultModel,
+        contents: parts,
+        config: {
+          temperature,
+          responseMimeType: "application/json",
+          responseSchema: schema as any,
+        },
+      });
+
+      const text = cleanText(res.text);
+      try {
+        return JSON.parse(text) as T;
+      } catch (error) {
+        console.error('[adkClient] Failed to parse structured VLM output:', text);
+        throw new Error(`Structured VLM output parsing failed: ${error}`);
+      }
     },
   };
 };

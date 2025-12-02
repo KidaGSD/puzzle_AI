@@ -8,6 +8,12 @@ import { runQuadrantPieceAgent, FragmentContext } from "./agents/quadrantPieceAg
 // Multi-agent system imports
 import { runPuzzleSessionAgent, regenerateQuadrant } from "./agents/puzzleSessionAgent";
 import { runPuzzleSynthesisAgent, PuzzleSynthesisInput } from "./agents/puzzleSynthesisAgent";
+// Feature extraction for grounded AI reasoning
+import {
+  extractBatchFeatures,
+  summarizeFeatures,
+  FragmentFeatures,
+} from "./agents/featureExtractionAgent";
 import {
   Fragment,
   UIEvent,
@@ -22,6 +28,7 @@ import {
   Anchor,
   AIErrorPayload,
   AILoadingPayload,
+  Puzzle,
 } from "../domain/models";
 import { usePuzzleSessionStateStore } from "../store/puzzleSessionStateStore";
 import { MascotProposal } from "./agents/mascotAgent";
@@ -629,9 +636,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   /**
    * Handle PUZZLE_SESSION_STARTED - triggers full puzzle pre-generation
    * This runs the PuzzleSessionAgent which:
-   * 1. Generates central question
-   * 2. Runs 4 quadrant agents in parallel
-   * 3. Returns pre-generated pieces for all quadrants
+   * 1. Extracts features from fragments (keywords, themes, etc.)
+   * 2. Generates central question grounded in fragment features
+   * 3. Runs 4 quadrant agents in parallel with feature context
+   * 4. Returns pre-generated pieces for all quadrants
    */
   const handlePuzzleSessionStarted = async (event: UIEvent) => {
     const state = store.getState();
@@ -640,18 +648,108 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     // Emit loading state
     bus.emitType("AI_LOADING", {
       source: 'puzzle_session',
+      message: 'Analyzing fragments...',
+    } as AILoadingPayload);
+
+    // ========== Phase 2: Feature Extraction ==========
+    // Extract features from fragments BEFORE generating puzzle
+    // This provides grounded context for AI reasoning
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FRAGMENT BALANCING: Ensure mix of TEXT and IMAGE fragments
+    // If canvas is mostly images, AI would only generate image-based insights
+    // ═══════════════════════════════════════════════════════════════════════
+    const allFragments = state.fragments;
+    const textFragments = allFragments.filter(f => f.type === "TEXT" || f.type === "OTHER" || f.type === "LINK");
+    const imageFragments = allFragments.filter(f => f.type === "IMAGE");
+
+    // Balance: take up to 6 text + up to 4 images (or whatever is available)
+    const maxText = Math.min(6, textFragments.length);
+    const maxImage = Math.min(4, imageFragments.length);
+    const balancedFragments = [
+      ...textFragments.slice(0, maxText),
+      ...imageFragments.slice(0, maxImage),
+    ].slice(0, 10);
+
+    console.log(`[orchestrator] Fragment balance: ${textFragments.length} TEXT, ${imageFragments.length} IMAGE → sending ${maxText} text + ${maxImage} images`);
+
+    // Warn if all fragments are images (AI may produce generic insights)
+    if (textFragments.length === 0 && imageFragments.length > 0) {
+      console.warn("[orchestrator] WARNING: No text fragments! AI reasoning will be limited to image analysis.");
+    }
+
+    const fragmentsToAnalyze = balancedFragments;
+    let extractedFeatures: FragmentFeatures[] = [];
+    let featureSummary = "";
+
+    try {
+      // Extract features (uses local heuristics + optional LLM)
+      extractedFeatures = await extractBatchFeatures(fragmentsToAnalyze, client);
+      featureSummary = summarizeFeatures(extractedFeatures);
+      console.log(`[orchestrator] Extracted features: ${featureSummary}`);
+    } catch (err) {
+      console.warn("[orchestrator] Feature extraction failed, continuing without:", err);
+    }
+
+    // Update loading message
+    bus.emitType("AI_LOADING", {
+      source: 'puzzle_session',
       message: 'Generating puzzle pieces...',
     } as AILoadingPayload);
 
-    // Build input for PuzzleSessionAgent with proper fragment data
-    const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 10).map(f => ({
-      id: f.id,
-      type: f.type,
-      title: f.title || f.summary?.slice(0, 30) || "Untitled",
-      summary: f.summary || f.content.slice(0, 100),
-      tags: f.tags,
-      imageUrl: f.type === "IMAGE" ? f.content : undefined,
-    }));
+    // ═══════════════════════════════════════════════════════════════════════
+    // BUILD FRAGMENT SUMMARIES: Ensure title/summary completeness
+    // This is critical for AI to reference fragments properly in outputs
+    // ═══════════════════════════════════════════════════════════════════════
+    const fragmentsSummary: FragmentSummary[] = fragmentsToAnalyze.map((f, i) => {
+      const features = extractedFeatures[i];
+      const keywordsStr = features?.combinedKeywords?.slice(0, 5).join(", ") || "";
+      const isImage = f.type === "IMAGE";
+
+      // TITLE: Ensure every fragment has a meaningful title
+      let title = f.title;
+      if (!title || title === "Untitled" || title.length < 2) {
+        if (isImage) {
+          // For images, use first tag or generic image title
+          title = f.tags?.[0] ? `Image: ${f.tags[0]}` : "Visual Reference";
+        } else {
+          // For text, extract first meaningful words from content
+          const contentWords = f.content?.split(/\s+/).slice(0, 5).join(" ") || "";
+          title = contentWords.length > 3 ? `${contentWords}...` : (f.summary?.slice(0, 25) || "Fragment");
+        }
+      }
+
+      // SUMMARY: Ensure meaningful summary
+      let enhancedSummary = f.summary;
+      if (!enhancedSummary || enhancedSummary.length < 5) {
+        if (isImage) {
+          enhancedSummary = f.tags?.length
+            ? `Image with themes: ${f.tags.slice(0, 3).join(", ")}`
+            : "Visual reference for design exploration";
+        } else {
+          enhancedSummary = f.content?.slice(0, 100) || "Fragment content";
+        }
+      }
+
+      // Add keywords if available
+      const fullSummary = keywordsStr
+        ? `${enhancedSummary} [Keywords: ${keywordsStr}]`
+        : enhancedSummary;
+
+      const fragSummary: FragmentSummary = {
+        id: f.id,
+        type: f.type,
+        title,
+        summary: fullSummary,
+        tags: [...(f.tags || []), ...(features?.textFeatures?.themes || [])].slice(0, 6),
+        imageUrl: isImage ? f.content : undefined,
+      };
+
+      // Debug: log what we're sending
+      console.log(`[orchestrator] Fragment ${i}: type=${f.type}, title="${title}", hasImageUrl=${!!fragSummary.imageUrl}`);
+
+      return fragSummary;
+    });
 
     const input: PuzzleSessionInput = {
       process_aim: state.project.processAim,
@@ -661,10 +759,26 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       puzzle_type: payload.puzzleType || "CLARIFY",
     };
 
-    console.log(`[orchestrator] PUZZLE_SESSION_STARTED: type=${input.puzzle_type}`);
+    console.log(`[orchestrator] PUZZLE_SESSION_STARTED: type=${input.puzzle_type}, features=${featureSummary.slice(0, 100)}...`);
 
     try {
       const result = await runPuzzleSessionAgent(input, client, payload.anchors || []);
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // PUZZLE WRITE-BACK: Store puzzle in contextStore with generated title
+      // This ensures the puzzle deck shows the central_question as title
+      // ═══════════════════════════════════════════════════════════════════════
+      const sessionState = result.sessionState;
+      const puzzleToStore: Puzzle = {
+        id: sessionState.session_id,
+        centralQuestion: sessionState.central_question,
+        projectId: state.project.id,
+        type: sessionState.puzzle_type,
+        createdFrom: 'ai_suggested',
+        createdAt: Date.now(),
+      };
+      store.addPuzzle(puzzleToStore);
+      console.log(`[orchestrator] Wrote puzzle to contextStore: "${sessionState.central_question}" (${sessionState.session_id})`);
 
       // Notify UI with pre-generated pieces
       if (puzzleSessionCallback) {

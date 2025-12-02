@@ -171,27 +171,42 @@ export const runMascotSuggest = async (
     return parsed;
   } catch (err) {
     console.error("[mascotAgent] runMascotSuggest failed:", err);
-    // Intelligent fallback based on context - try to cite fragments
+    // Fallback grounded in ACTUAL fragment content - NOT generic questions
+    const fragments = input.fragments || [];
     const clusterCount = input.clusters.length;
-    const puzzleCount = input.puzzleSummaries.length;
-    const fragmentCount = input.fragments?.length || 0;
 
-    // Get first fragment title for more specific fallback
-    const firstFragmentTitle = input.fragments?.[0]?.title || "your ideas";
+    // Extract real keywords from fragments for the question
+    const fragmentTitles = fragments.slice(0, 3).map(f => f.title).filter(Boolean);
+    const fragmentTags = fragments.flatMap(f => f.tags || []).slice(0, 5);
 
-    // Decide puzzle type based on context
+    // Build question from actual fragment content
+    let centralQuestion: string;
+    let rationale: string;
     let puzzleType: PuzzleType = "CLARIFY";
-    let centralQuestion = "What does this project's core identity feel like?";
-    let rationale = `Looking at "${firstFragmentTitle}" and your other fragments, starting with clarification will help establish clear foundations.`;
 
+    if (fragmentTitles.length > 0) {
+      // Create question from fragment titles
+      const titleList = fragmentTitles.slice(0, 2).map(t => `"${t}"`).join(" and ");
+      centralQuestion = `How do ${titleList} connect to ${input.processAim.split(" ").slice(0, 5).join(" ")}...?`;
+      rationale = `Your ${titleList} fragments suggest themes worth clarifying before expanding.`;
+    } else if (fragmentTags.length > 0) {
+      // Create question from tags
+      const tagList = fragmentTags.slice(0, 3).join(", ");
+      centralQuestion = `What defines the ${tagList} direction?`;
+      rationale = `Tags like ${tagList} from your fragments suggest a theme to clarify.`;
+    } else {
+      // Minimal fallback indicating AI couldn't generate
+      centralQuestion = `What's the core direction for: ${input.processAim.slice(0, 50)}?`;
+      rationale = "Add more fragments to get more specific puzzle suggestions.";
+    }
+
+    // Adjust puzzle type based on cluster count
     if (clusterCount > 3) {
       puzzleType = "REFINE";
-      centralQuestion = "Which direction should we prioritize from these ideas?";
-      rationale = `You have ${clusterCount} distinct clusters of ideas. Time to converge and prioritize the strongest direction.`;
-    } else if (puzzleCount === 0 && fragmentCount > 2) {
-      puzzleType = "EXPAND";
-      centralQuestion = "What possibilities haven't we considered yet?";
-      rationale = `Your fragments like "${firstFragmentTitle}" provide a starting point, but let's explore more angles before committing.`;
+      centralQuestion = fragmentTitles.length > 0
+        ? `Which direction between ${fragmentTitles.slice(0, 2).map(t => `"${t}"`).join(" vs ")} fits best?`
+        : `Which of your ${clusterCount} themes should we prioritize?`;
+      rationale = `With ${clusterCount} clusters, it's time to converge.`;
     }
 
     return {

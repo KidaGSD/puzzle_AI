@@ -140,8 +140,8 @@ ${fragmentSection}
 TASK: Generate 1-3 SHORT STATEMENT pieces for the ${input.mode} quadrant.
 Each statement should ${getPuzzleTypeInstruction(puzzleType)}
 
-Examples for ${puzzleType} ${input.mode}:
-${getPuzzleTypeExamples(puzzleType, input.mode)}
+=== GUIDANCE ===
+${getPuzzleTypeGuidance(puzzleType, input.mode)}
 
 Return JSON with this structure:
 {
@@ -179,65 +179,34 @@ const getPuzzleTypeInstruction = (puzzleType: PuzzleType): string => {
   return instructions[puzzleType];
 };
 
-const getPuzzleTypeExamples = (puzzleType: PuzzleType, mode: DesignMode): string => {
-  // STATEMENT examples (陈述式) - NOT questions
-  const examples: Record<PuzzleType, Record<DesignMode, string[]>> = {
-    CLARIFY: {
-      FORM: [
-        "Geometric foundation with organic accents",
-        "Light visual weight, airy composition",
-      ],
-      MOTION: [
-        "Calm, deliberate motion flow",
-        "Gradual transitions, natural pacing",
-      ],
-      EXPRESSION: [
-        "Calm confidence over excitement",
-        "Professional warmth, not coldness",
-      ],
-      FUNCTION: [
-        "Mobile-first, desktop-enhanced",
-        "Creative professionals as audience",
-      ],
-    },
-    EXPAND: {
-      FORM: [
-        "Glass morphism as depth metaphor",
-        "Layered transparency revealing structure",
-      ],
-      MOTION: [
-        "Breathing animations for living feel",
-        "Physics-based spring interactions",
-      ],
-      EXPRESSION: [
-        "Playful moments within serious context",
-        "Nostalgic references to analog tools",
-      ],
-      FUNCTION: [
-        "Offline-first for reliability",
-        "Voice control as alternative input",
-      ],
-    },
-    REFINE: {
-      FORM: [
-        "Rounded corners as signature element",
-        "Two-column layout as primary structure",
-      ],
-      MOTION: [
-        "Fade transitions only, no sliding",
-        "200ms as standard duration",
-      ],
-      EXPRESSION: [
-        "Helpful guide over neutral tool",
-        "Encouraging tone in empty states",
-      ],
-      FUNCTION: [
-        "Search as primary navigation",
-        "Export to PDF as must-have",
-      ],
-    },
+/**
+ * Generate dynamic guidance for puzzle type and mode
+ * NOTE: We do NOT provide hardcoded examples here because:
+ * 1. AI tends to copy examples verbatim instead of reasoning from fragments
+ * 2. "Glass morphism as metaphor" appearing in outputs was from such examples
+ * 3. Real insights must come from analyzing the actual fragment content
+ */
+const getPuzzleTypeGuidance = (puzzleType: PuzzleType, mode: DesignMode): string => {
+  const modeDescriptions: Record<DesignMode, string> = {
+    FORM: "visual shape, structure, composition, spatial relationships",
+    MOTION: "movement, animation, timing, transitions, rhythm",
+    EXPRESSION: "emotional tone, personality, voice, atmosphere",
+    FUNCTION: "purpose, utility, user value, practical constraints",
   };
-  return examples[puzzleType][mode].map((e, i) => `  ${i + 1}. "${e}"`).join("\n");
+
+  const typeGuidance: Record<PuzzleType, string> = {
+    CLARIFY: "Focus on DEFINING and SHARPENING concepts. What IS the core quality? Make vague ideas concrete.",
+    EXPAND: "Focus on EXPLORING new angles. What ELSE is possible? Introduce fresh perspectives.",
+    REFINE: "Focus on PRIORITIZING and CHOOSING. What's ESSENTIAL? Help commit to specific directions.",
+  };
+
+  return `For ${mode} (${modeDescriptions[mode]}):
+${typeGuidance[puzzleType]}
+
+IMPORTANT: Generate insights from the FRAGMENTS provided above.
+- Reference specific elements, colors, words, or concepts from fragments
+- Each statement should be grounded in something you observed
+- Do NOT generate generic design advice`;
 };
 
 export const runQuadrantPieceAgent = async (
@@ -264,27 +233,26 @@ export const runQuadrantPieceAgent = async (
   }
 };
 
-// Fallback STATEMENTS when AI fails (陈述式)
+/**
+ * Generate minimal fallback statement when AI fails
+ * These are intentionally generic - they indicate a fallback occurred
+ * NOTE: We keep these minimal to encourage re-generation with proper fragments
+ */
 const getFallbackStatement = (puzzleType: PuzzleType, mode: DesignMode): string => {
-  const fallbacks: Record<PuzzleType, Record<DesignMode, string>> = {
-    CLARIFY: {
-      FORM: "Core visual quality defined",
-      MOTION: "Motion energy as gentle flow",
-      EXPRESSION: "Single word feeling captured",
-      FUNCTION: "Target audience identified",
-    },
-    EXPAND: {
-      FORM: "Alternative visual approach",
-      MOTION: "Unexpected movement possibility",
-      EXPRESSION: "Contrasting emotion for depth",
-      FUNCTION: "New use case considered",
-    },
-    REFINE: {
-      FORM: "Essential visual element chosen",
-      MOTION: "Priority motion effect selected",
-      EXPRESSION: "Core feeling doubled down",
-      FUNCTION: "Must-have feature confirmed",
-    },
+  // Map puzzle types to action words
+  const typeAction: Record<PuzzleType, string> = {
+    CLARIFY: "Define",
+    EXPAND: "Explore",
+    REFINE: "Choose",
   };
-  return fallbacks[puzzleType][mode];
+
+  // Map modes to aspects
+  const modeAspect: Record<DesignMode, string> = {
+    FORM: "visual direction",
+    MOTION: "motion quality",
+    EXPRESSION: "emotional tone",
+    FUNCTION: "core purpose",
+  };
+
+  return `${typeAction[puzzleType]} ${modeAspect[mode]}`;
 };

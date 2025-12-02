@@ -16,6 +16,11 @@ import {
 } from "../../domain/models";
 import { LLMClient } from "../adkClient";
 import { priorityToSaturation } from "../../constants/colors";
+import {
+  filterValidPieces,
+  calculateQualityScore,
+  isBlacklistedPhrase,
+} from "./outputValidation";
 
 // ========== Mode Descriptions ==========
 
@@ -38,25 +43,28 @@ export const MODE_DESCRIPTIONS: Record<DesignMode, { focus: string; aspects: str
   },
 };
 
-// ========== Statement Examples (Good vs Bad) ==========
+// ========== Statement Format Guide ==========
 
 /**
- * Examples to guide AI to generate STATEMENTS, not questions
+ * Format guidance for AI - shows what FORMAT to follow
+ * NOTE: These demonstrate structure, NOT content to copy
+ * Actual content must come from analyzing user's fragments
  */
-export const STATEMENT_EXAMPLES = {
-  bad: [
-    "How does the digital experience reflect the awakening?",
-    "What's the dominant visual weight - heavy or light?",
-    "Should transitions feel instant or gradual?",
-    "Which emotions best describe what you want?",
+export const STATEMENT_FORMAT_GUIDE = {
+  // Questions are WRONG format - never generate these
+  badFormat: [
+    "How does X work?",
+    "What's the Y?",
+    "Should we Z?",
+    "Which option?",
   ],
-  good: [
-    "Digital experience as gentle awakening",
-    "Light visual weight with breathing space",
-    "Gradual transitions creating calm flow",
-    "Warmth balanced with professional clarity",
-    "Minimalist form language",
-    "Organic curves over sharp geometry",
+  // These patterns show the FORMAT - 2-5 word declarative statements
+  // DO NOT copy these words - generate your own from fragment content
+  formatPatterns: [
+    "2 words: Adjective + Noun",
+    "3 words: Noun + Preposition + Noun",
+    "4 words: Adjective + Noun + Verb + Noun",
+    "5 words: Noun + As + Adjective + Noun + Noun",
   ],
 };
 
@@ -77,83 +85,19 @@ const PUZZLE_TYPE_INSTRUCTIONS: Record<PuzzleType, { verb: string; guidance: str
   },
 };
 
-// ========== Mode-Specific Statement Examples ==========
-
-const MODE_STATEMENT_EXAMPLES: Record<PuzzleType, Record<DesignMode, string[]>> = {
-  CLARIFY: {
-    FORM: [
-      "Geometric foundation with organic accents",
-      "Light visual weight, airy composition",
-      "Card-based layout with generous whitespace",
-    ],
-    MOTION: [
-      "Slow, deliberate transitions (300ms+)",
-      "Ease-out curves for natural deceleration",
-      "Minimal motion, content-focused",
-    ],
-    EXPRESSION: [
-      "Calm confidence, not excitement",
-      "Professional warmth without corporate coldness",
-      "Understated premium quality",
-    ],
-    FUNCTION: [
-      "Mobile-first, desktop-enhanced",
-      "Primary audience: creative professionals",
-      "Quick task completion as core value",
-    ],
-  },
-  EXPAND: {
-    FORM: [
-      "Glass morphism as depth metaphor",
-      "Asymmetric balance creating visual tension",
-      "Layered transparency revealing structure",
-    ],
-    MOTION: [
-      "Breathing animations for living interface",
-      "Staggered reveals building anticipation",
-      "Physics-based spring animations",
-    ],
-    EXPRESSION: [
-      "Playful moments within serious context",
-      "Unexpected delight in routine interactions",
-      "Nostalgic references to analog tools",
-    ],
-    FUNCTION: [
-      "Offline-first for unreliable connections",
-      "Voice control as alternative input",
-      "Integration with existing workflow tools",
-    ],
-  },
-  REFINE: {
-    FORM: [
-      "Rounded corners (8px) as signature element",
-      "Two-column layout as primary structure",
-      "Blue-gray palette as final direction",
-    ],
-    MOTION: [
-      "Fade transitions only, no sliding",
-      "200ms duration as standard timing",
-      "Loading states over skeletons",
-    ],
-    EXPRESSION: [
-      "Helpful guide over neutral tool",
-      "Encouraging tone in empty states",
-      "Subtle celebration of milestones",
-    ],
-    FUNCTION: [
-      "Search as primary navigation pattern",
-      "Three-step wizard for onboarding",
-      "Export to PDF as must-have feature",
-    ],
-  },
-};
+// ========== Removed Hardcoded Examples ==========
+// NOTE: Hardcoded MODE_STATEMENT_EXAMPLES were REMOVED because:
+// 1. AI was copying them verbatim instead of reasoning from fragments
+// 2. "Glass Morphism as Metaphor" appearing in outputs was from these examples
+// 3. Real insights must come from analyzing fragment content, not examples
+//
+// Now the AI MUST derive insights from the actual fragments provided.
 
 // ========== Build Prompt ==========
 
 export const buildQuadrantPrompt = (input: QuadrantAgentInput): string => {
   const modeInfo = MODE_DESCRIPTIONS[input.mode];
   const puzzleInfo = PUZZLE_TYPE_INSTRUCTIONS[input.puzzle_type];
-  const examples = MODE_STATEMENT_EXAMPLES[input.puzzle_type][input.mode];
 
   // Build fragment context with IDs for referencing
   let fragmentSection = "";
@@ -197,11 +141,13 @@ Generate SHORT STATEMENTS, NOT questions.
 Each piece is an INSIGHT or ANSWER, not a prompt.
 NEVER end with a question mark (?).
 
-BAD examples (DO NOT generate):
-${STATEMENT_EXAMPLES.bad.map((b) => `  ✗ "${b}"`).join("\n")}
+BAD FORMAT (questions - do NOT generate):
+${STATEMENT_FORMAT_GUIDE.badFormat.map((b) => `  ✗ "${b}"`).join("\n")}
 
-GOOD examples (follow this style - note: all 2-5 words):
-${STATEMENT_EXAMPLES.good.map((g) => `  ✓ "${g}"`).join("\n")}
+GOOD FORMAT (declarative statements - 2-5 words):
+${STATEMENT_FORMAT_GUIDE.formatPatterns.map((p) => `  Pattern: ${p}`).join("\n")}
+
+Generate YOUR OWN statements based on fragment content. Do NOT copy any examples.
 
 === CONTEXT ===
 Puzzle type: ${input.puzzle_type} (${puzzleInfo.guidance})
@@ -223,8 +169,10 @@ Priority assignment:
 - Priority 3-4: Supporting insights (expand on core ideas)
 - Priority 5-6: Subtle/detailed insights (nuances, placed further out)
 
-Examples for ${input.puzzle_type} ${input.mode}:
-${examples.map((e, i) => `  ${i + 1}. "${e}"`).join("\n")}
+⚠️ CRITICAL: EVERY piece MUST derive from the fragments above.
+DO NOT invent generic design advice. Extract SPECIFIC insights from the fragment content.
+If analyzing an image fragment, describe what you observe (colors, shapes, mood, objects).
+If analyzing text, pull out key concepts and terminology the user provided.
 
 === OUTPUT FORMAT ===
 Return ONLY valid JSON:
@@ -380,14 +328,39 @@ export const runQuadrantAgent = async (
       let title = truncateTitle(p.text, 5);
       title = padTitle(title, input.mode);
 
-      // CRITICAL: Ensure every piece has reasoning (fragment_summary)
-      // Accept both snake_case (AI output) and camelCase (interface)
+      // CRITICAL: Accept both snake_case (AI output) and camelCase (interface)
+      let fragmentId = p.fragment_id || (p as any).fragmentId;
+      let fragmentTitle = p.fragment_title || (p as any).fragmentTitle;
       let fragmentSummary = p.fragment_summary || (p as any).fragmentSummary;
-      const fragmentId = p.fragment_id || (p as any).fragmentId;
-      const fragmentTitle = p.fragment_title || (p as any).fragmentTitle;
+      let imageUrl = p.image_url || (p as any).imageUrl;
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // FORCED BACKFILL: If fragment_id exists, ensure all fields are populated
+      // This prevents blank preview popups when AI omits some fields
+      // ═══════════════════════════════════════════════════════════════════════
+      if (fragmentId) {
+        const sourceFrag = input.relevant_fragments.find(f => f.id === fragmentId);
+        if (sourceFrag) {
+          // Backfill missing title
+          if (!fragmentTitle) {
+            fragmentTitle = sourceFrag.title || sourceFrag.summary?.slice(0, 30) || "Fragment";
+            console.log(`[QuadrantAgent] Backfilled fragment_title for ${fragmentId}: "${fragmentTitle}"`);
+          }
+          // Backfill missing imageUrl for IMAGE fragments
+          if (!imageUrl && sourceFrag.imageUrl) {
+            imageUrl = sourceFrag.imageUrl;
+            console.log(`[QuadrantAgent] Backfilled image_url for ${fragmentId}`);
+          }
+          // Backfill missing summary
+          if (!fragmentSummary) {
+            fragmentSummary = `From "${fragmentTitle}": ${sourceFrag.summary?.slice(0, 100) || "This fragment influenced this insight"}`;
+            console.log(`[QuadrantAgent] Backfilled fragment_summary for ${fragmentId}`);
+          }
+        }
+      }
+
+      // CRITICAL: Ensure every piece has reasoning even without fragment
       if (!fragmentSummary) {
-        // Generate fallback reasoning based on context
         fragmentSummary = generateFallbackReasoning(
           input.puzzle_type,
           input.mode,
@@ -406,18 +379,36 @@ export const runQuadrantAgent = async (
         fragment_id: fragmentId,
         fragment_title: fragmentTitle,
         fragment_summary: fragmentSummary,
+        image_url: imageUrl,
       };
     });
 
     // Filter out any pieces that end with ?
-    const validPieces = pieces.filter((p) => !p.text.trim().endsWith("?"));
+    let validPieces = pieces.filter((p) => !p.text.trim().endsWith("?"));
 
-    if (validPieces.length === 0) {
-      // Fallback if all pieces were questions
+    // ========== Phase 4: Output Validation ==========
+    // Filter out blacklisted/generic phrases and validate fragment grounding
+    validPieces = validPieces.filter((p) => {
+      // Reject if matches known hardcoded examples
+      if (isBlacklistedPhrase(p.text)) {
+        console.warn(`[${input.mode}QuadrantAgent] Rejected blacklisted phrase: "${p.text}"`);
+        return false;
+      }
+      return true;
+    });
+
+    // Run full validation and log quality score
+    const filteredPieces = filterValidPieces(validPieces, input.relevant_fragments, input.mode);
+    const qualityScore = calculateQualityScore(filteredPieces, input.relevant_fragments);
+    console.log(`[${input.mode}QuadrantAgent] Quality score: ${qualityScore}/100, pieces: ${filteredPieces.length}`);
+
+    if (filteredPieces.length === 0) {
+      // Fallback if all pieces were filtered out
+      console.warn(`[${input.mode}QuadrantAgent] All pieces filtered, using fallback`);
       return getFallbackOutput(input);
     }
 
-    return { pieces: validPieces };
+    return { pieces: filteredPieces };
   } catch (error) {
     console.error(`[${input.mode}QuadrantAgent] Error:`, error);
     return getFallbackOutput(input);
@@ -426,26 +417,60 @@ export const runQuadrantAgent = async (
 
 // ========== Fallback ==========
 
+/**
+ * Generate fallback output when AI fails - uses ACTUAL fragment content
+ * instead of hardcoded examples
+ */
 const getFallbackOutput = (input: QuadrantAgentInput): QuadrantAgentOutput => {
-  const examples = MODE_STATEMENT_EXAMPLES[input.puzzle_type][input.mode];
-  const text1 = examples[0] || "Core insight";
-  const text2 = examples[1] || "Supporting detail";
+  const fragments = input.relevant_fragments;
+  const modeAspect = MODE_DESCRIPTIONS[input.mode];
 
-  const fallbackPieces: QuadrantAgentPiece[] = [
-    {
-      text: text1,
-      priority: 2,
-      saturation_level: "high",
-      fragment_summary: generateFallbackReasoning(input.puzzle_type, input.mode, text1, input.relevant_fragments),
-    },
-    {
-      text: text2,
-      priority: 4,
+  // Try to extract real content from fragments
+  const pieces: QuadrantAgentPiece[] = [];
+
+  if (fragments.length > 0) {
+    // Use fragment titles/summaries to create fragment-grounded pieces
+    fragments.slice(0, 2).forEach((frag, index) => {
+      const title = frag.title || "Reference";
+      const summary = frag.summary || "";
+      const isImage = !!frag.imageUrl;
+
+      // Create a piece title from fragment content
+      const pieceText = isImage
+        ? `Visual: ${title.slice(0, 30)}`
+        : summary.length > 0
+          ? `${summary.split(/[.!?]/)[0].trim().slice(0, 40)}...`
+          : `Explore ${title}`;
+
+      // Truncate to 2-5 words
+      const words = pieceText.split(/\s+/).slice(0, 4).join(" ");
+
+      pieces.push({
+        text: words || `${input.mode.toLowerCase()} direction`,
+        priority: index === 0 ? 2 : 4,
+        saturation_level: index === 0 ? "high" : "medium",
+        fragment_id: frag.id,
+        fragment_title: title,
+        fragment_summary: isImage
+          ? `From image "${title}": Visual reference for ${input.mode.toLowerCase()} exploration`
+          : `From "${title}": ${summary.slice(0, 80)}`,
+        // CRITICAL: Include image_url for IMAGE fragments
+        image_url: frag.imageUrl,
+      });
+    });
+  }
+
+  // If no fragments, use minimal fallback that indicates AI couldn't generate
+  if (pieces.length === 0) {
+    pieces.push({
+      text: `Explore ${modeAspect.aspects[0] || input.mode.toLowerCase()}`,
+      priority: 3,
       saturation_level: "medium",
-      fragment_summary: generateFallbackReasoning(input.puzzle_type, input.mode, text2, input.relevant_fragments),
-    },
-  ];
-  return { pieces: fallbackPieces };
+      fragment_summary: `Fallback suggestion for ${input.mode} exploration. Add more fragments for better insights.`,
+    });
+  }
+
+  return { pieces };
 };
 
 // ========== Timeout Wrapper ==========
