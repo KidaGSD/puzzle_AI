@@ -6,7 +6,7 @@ import { runMascotSelf, runMascotSuggest } from "./agents/mascotAgent";
 import { runPuzzleDesignerAgent } from "./agents/puzzleDesignerAgent";
 import { runQuadrantPieceAgent, FragmentContext } from "./agents/quadrantPieceAgent";
 // Multi-agent system imports
-import { runPuzzleSessionAgent, regenerateQuadrant } from "./agents/puzzleSessionAgent";
+import { runPuzzleSessionAgent, regenerateQuadrant as legacyRegenerateQuadrant } from "./agents/puzzleSessionAgent";
 import { runPuzzleSynthesisAgent, PuzzleSynthesisInput } from "./agents/puzzleSynthesisAgent";
 // Feature extraction for grounded AI reasoning
 import {
@@ -14,6 +14,16 @@ import {
   summarizeFeatures,
   FragmentFeatures,
 } from "./agents/featureExtractionAgent";
+// New scalable modules
+import { initFeatureStore, getFeatureStore } from "./stores/fragmentFeatureStore";
+import { FragmentRanker, toFragmentSummaries, createSelectionContext } from "./retrieval/fragmentRanker";
+import { applyDiversityPipeline, logDiversityStats } from "./agents/outputValidation";
+// ADK Integration
+import {
+  startPuzzleSession as adkStartPuzzleSession,
+  regenerateQuadrant as adkRegenerateQuadrant,
+  synthesizePuzzle as adkSynthesizePuzzle
+} from "./adk";
 import {
   Fragment,
   UIEvent,
@@ -39,6 +49,10 @@ import { v4 as uuidv4 } from "uuid";
 
 // Callback type for mascot proposals - passed in to avoid circular dependency
 type MascotProposalCallback = (proposal: MascotProposal) => void;
+
+// Feature flag for ADK integration
+// Set to true to use new ADK-based workflow, false for legacy
+const USE_ADK_WORKFLOW = process.env.USE_ADK_WORKFLOW === 'true' || false;
 
 type DebouncedFn = (() => void) & { cancel?: () => void };
 
@@ -651,34 +665,60 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       message: 'Analyzing fragments...',
     } as AILoadingPayload);
 
-    // ========== Phase 2: Feature Extraction ==========
-    // Extract features from fragments BEFORE generating puzzle
-    // This provides grounded context for AI reasoning
+    // ========== Phase 2: Feature Extraction with Caching ==========
+    // Use the feature store for cached extraction, reducing API costs
+    const featureStore = initFeatureStore(client);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // FRAGMENT BALANCING: Ensure mix of TEXT and IMAGE fragments
-    // If canvas is mostly images, AI would only generate image-based insights
+    // INTELLIGENT FRAGMENT RANKING: Replace fixed 6/4 with scored selection
+    // Ranks by relevance, diversity, and novelty - not arbitrary slicing
     // ═══════════════════════════════════════════════════════════════════════
     const allFragments = state.fragments;
-    const textFragments = allFragments.filter(f => f.type === "TEXT" || f.type === "OTHER" || f.type === "LINK");
-    const imageFragments = allFragments.filter(f => f.type === "IMAGE");
+    const processAim = state.project.processAim;
 
-    // Balance: take up to 6 text + up to 4 images (or whatever is available)
-    const maxText = Math.min(6, textFragments.length);
-    const maxImage = Math.min(4, imageFragments.length);
-    const balancedFragments = [
-      ...textFragments.slice(0, maxText),
-      ...imageFragments.slice(0, maxImage),
-    ].slice(0, 10);
+    console.log(`[orchestrator] Starting intelligent ranking for ${allFragments.length} fragments`);
 
-    console.log(`[orchestrator] Fragment balance: ${textFragments.length} TEXT, ${imageFragments.length} IMAGE → sending ${maxText} text + ${maxImage} images`);
+    // Use FragmentRanker for diverse, relevant selection
+    const ranker = new FragmentRanker({
+      totalTarget: 24,       // More fragments for variety
+      perQuadrant: 6,
+      maxTextPerQuadrant: 4,
+      maxImagePerQuadrant: 2,
+      maxPerTag: 2,          // Diversity: max 2 per tag
+      maxPerFragment: 2,     // Quota: max 2 pieces per fragment
+    });
 
-    // Warn if all fragments are images (AI may produce generic insights)
-    if (textFragments.length === 0 && imageFragments.length > 0) {
+    let rankedSelection: Awaited<ReturnType<typeof ranker.rankAndSelect>> | null = null;
+    let fragmentsToAnalyze: Fragment[] = [];
+
+    try {
+      rankedSelection = await ranker.rankAndSelect(allFragments, processAim);
+      // Collect unique fragments from global + all modes
+      const selectedIds = new Set<string>();
+      rankedSelection.global.forEach(r => selectedIds.add(r.fragment.id));
+      rankedSelection.perMode.forEach(fragments => {
+        fragments.forEach(r => selectedIds.add(r.fragment.id));
+      });
+      fragmentsToAnalyze = allFragments.filter(f => selectedIds.has(f.id));
+
+      console.log(`[orchestrator] Ranked selection: ${fragmentsToAnalyze.length} diverse fragments selected`);
+    } catch (err) {
+      console.warn("[orchestrator] Ranking failed, using fallback balance:", err);
+      // Fallback to simple balance
+      const textFragments = allFragments.filter(f => f.type === "TEXT" || f.type === "OTHER");
+      const imageFragments = allFragments.filter(f => f.type === "IMAGE");
+      fragmentsToAnalyze = [
+        ...textFragments.slice(0, 6),
+        ...imageFragments.slice(0, 4),
+      ].slice(0, 10);
+    }
+
+    // Warn if all fragments are images
+    const textCount = fragmentsToAnalyze.filter(f => f.type !== "IMAGE").length;
+    if (textCount === 0 && fragmentsToAnalyze.length > 0) {
       console.warn("[orchestrator] WARNING: No text fragments! AI reasoning will be limited to image analysis.");
     }
 
-    const fragmentsToAnalyze = balancedFragments;
     let extractedFeatures: FragmentFeatures[] = [];
     let featureSummary = "";
 

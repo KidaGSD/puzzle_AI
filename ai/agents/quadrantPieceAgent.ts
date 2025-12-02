@@ -33,7 +33,7 @@ export interface QuadrantPieceOutput {
   pieces: Array<{
     mode: DesignMode;
     // ═══════════════════════════════════════════════════════════
-    // PIECE TITLE (shown ON the piece - 2-5 words, 陈述式)
+    // PIECE TITLE (shown ON the piece - 2-5 words)
     // ═══════════════════════════════════════════════════════════
     text: string;
     internalNote?: string;
@@ -94,7 +94,7 @@ const buildPrompt = (input: QuadrantPieceInput) => {
 
 1. PIECE TITLE (text field):
    - MUST be 2-5 words ONLY (not more, not fewer)
-   - MUST be 陈述式 (declarative statement), NOT a question
+   - MUST be (declarative statement), NOT a question
    - NEVER end with a question mark (?)
 
    BAD (do NOT generate):

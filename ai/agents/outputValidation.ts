@@ -1,16 +1,38 @@
 /**
- * Output Validation Module
+ * Output Validation & Diversity Module
  *
- * Validates AI-generated outputs to ensure they are grounded in fragment content
- * and not just generic/hardcoded responses.
- *
- * Key checks:
- * 1. Piece titles should not match known hardcoded examples
- * 2. Pieces should cite fragment content when fragments are provided
- * 3. Central questions should not be generic defaults
+ * Validates AI-generated outputs and enforces diversity constraints:
+ * 1. Blacklist: Reject hardcoded/generic phrases
+ * 2. Fragment grounding: Pieces should cite fragment content
+ * 3. Semantic dedupe: Remove near-duplicate pieces
+ * 4. Quota enforcement: Limit per-fragment and per-theme usage
  */
 
 import { QuadrantAgentPiece, FragmentSummary } from "../../domain/models";
+
+// ========== Diversity Types ==========
+
+export interface DiversityStats {
+  totalGenerated: number;
+  afterBlacklist: number;
+  afterDedupe: number;
+  afterQuota: number;
+  uniqueRate: number;
+  fragmentCoverage: number;
+  filterReasons: Record<string, number>;
+}
+
+export interface DedupeConfig {
+  similarityThreshold: number;  // 0-1, pieces above this are considered duplicates
+  maxPerFragment: number;       // Max pieces citing same fragment
+  maxPerTheme: number;          // Max pieces with same theme
+}
+
+const DEFAULT_DEDUPE_CONFIG: DedupeConfig = {
+  similarityThreshold: 0.6,
+  maxPerFragment: 2,
+  maxPerTheme: 3,
+};
 
 // ========== Blacklisted Generic Phrases ==========
 
@@ -282,4 +304,296 @@ export const calculateQualityScore = (
   }
 
   return Math.round(totalScore / pieces.length);
+};
+
+// ========== Text Normalization ==========
+
+/**
+ * Normalize text for comparison (lowercase, remove punctuation, trim)
+ */
+export const normalizeText = (text: string): string => {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
+ * Extract n-grams from text
+ */
+const extractNGrams = (text: string, n: number): Set<string> => {
+  const normalized = normalizeText(text);
+  const words = normalized.split(' ');
+  const ngrams = new Set<string>();
+
+  for (let i = 0; i <= words.length - n; i++) {
+    ngrams.add(words.slice(i, i + n).join(' '));
+  }
+
+  return ngrams;
+};
+
+// ========== Similarity Functions ==========
+
+/**
+ * Calculate 3-gram overlap between two texts
+ * Returns 0-1 where 1 = identical
+ */
+export const calculate3GramOverlap = (text1: string, text2: string): number => {
+  const ngrams1 = extractNGrams(text1, 3);
+  const ngrams2 = extractNGrams(text2, 3);
+
+  if (ngrams1.size === 0 || ngrams2.size === 0) {
+    // Fall back to word overlap for short texts
+    return calculateJaccardSimilarity(text1, text2);
+  }
+
+  let overlap = 0;
+  for (const gram of ngrams1) {
+    if (ngrams2.has(gram)) overlap++;
+  }
+
+  return overlap / Math.max(ngrams1.size, ngrams2.size);
+};
+
+/**
+ * Calculate Jaccard similarity between two texts (word-level)
+ * Returns 0-1 where 1 = identical
+ */
+export const calculateJaccardSimilarity = (text1: string, text2: string): number => {
+  const words1 = new Set(normalizeText(text1).split(' ').filter(w => w.length > 2));
+  const words2 = new Set(normalizeText(text2).split(' ').filter(w => w.length > 2));
+
+  if (words1.size === 0 || words2.size === 0) return 0;
+
+  let intersection = 0;
+  for (const word of words1) {
+    if (words2.has(word)) intersection++;
+  }
+
+  const union = words1.size + words2.size - intersection;
+  return intersection / union;
+};
+
+/**
+ * Check if two pieces are semantically similar
+ */
+export const arePiecesSimilar = (
+  piece1: QuadrantAgentPiece,
+  piece2: QuadrantAgentPiece,
+  threshold: number = DEFAULT_DEDUPE_CONFIG.similarityThreshold
+): boolean => {
+  const text1 = piece1.text || '';
+  const text2 = piece2.text || '';
+
+  // Exact match after normalization
+  if (normalizeText(text1) === normalizeText(text2)) return true;
+
+  // 3-gram overlap check
+  const overlap = calculate3GramOverlap(text1, text2);
+  if (overlap >= threshold) return true;
+
+  // Jaccard similarity as backup
+  const jaccard = calculateJaccardSimilarity(text1, text2);
+  return jaccard >= threshold;
+};
+
+// ========== Deduplication ==========
+
+/**
+ * Remove duplicate pieces based on semantic similarity
+ */
+export const dedupePieces = (
+  pieces: QuadrantAgentPiece[],
+  config: DedupeConfig = DEFAULT_DEDUPE_CONFIG
+): { pieces: QuadrantAgentPiece[]; removed: number } => {
+  const unique: QuadrantAgentPiece[] = [];
+  let removed = 0;
+
+  for (const piece of pieces) {
+    const isDuplicate = unique.some(existing =>
+      arePiecesSimilar(piece, existing, config.similarityThreshold)
+    );
+
+    if (isDuplicate) {
+      removed++;
+      console.log(`[Dedupe] Removed duplicate: "${piece.text}"`);
+    } else {
+      unique.push(piece);
+    }
+  }
+
+  return { pieces: unique, removed };
+};
+
+/**
+ * Enforce per-fragment quota
+ */
+export const enforceFragmentQuota = (
+  pieces: QuadrantAgentPiece[],
+  existingCounts: Map<string, number>,
+  maxPerFragment: number = DEFAULT_DEDUPE_CONFIG.maxPerFragment
+): { pieces: QuadrantAgentPiece[]; removed: number } => {
+  const counts = new Map(existingCounts);
+  const allowed: QuadrantAgentPiece[] = [];
+  let removed = 0;
+
+  for (const piece of pieces) {
+    const fragmentId = piece.fragment_id;
+    if (!fragmentId) {
+      // No fragment reference, allow it
+      allowed.push(piece);
+      continue;
+    }
+
+    const currentCount = counts.get(fragmentId) || 0;
+    if (currentCount >= maxPerFragment) {
+      removed++;
+      console.log(`[Quota] Fragment over-quota (${currentCount}/${maxPerFragment}): "${piece.text}"`);
+    } else {
+      counts.set(fragmentId, currentCount + 1);
+      allowed.push(piece);
+    }
+  }
+
+  return { pieces: allowed, removed };
+};
+
+/**
+ * Enforce per-theme quota
+ */
+export const enforceThemeQuota = (
+  pieces: QuadrantAgentPiece[],
+  existingCounts: Map<string, number>,
+  maxPerTheme: number = DEFAULT_DEDUPE_CONFIG.maxPerTheme
+): { pieces: QuadrantAgentPiece[]; removed: number } => {
+  const counts = new Map(existingCounts);
+  const allowed: QuadrantAgentPiece[] = [];
+  let removed = 0;
+
+  for (const piece of pieces) {
+    // Extract theme-like keywords from piece text
+    const text = normalizeText(piece.text || '');
+    const words = text.split(' ').filter(w => w.length > 3);
+
+    let overQuota = false;
+    for (const word of words) {
+      const currentCount = counts.get(word) || 0;
+      if (currentCount >= maxPerTheme) {
+        overQuota = true;
+        break;
+      }
+    }
+
+    if (overQuota) {
+      removed++;
+      console.log(`[Quota] Theme over-quota: "${piece.text}"`);
+    } else {
+      // Update counts for all keywords
+      for (const word of words) {
+        counts.set(word, (counts.get(word) || 0) + 1);
+      }
+      allowed.push(piece);
+    }
+  }
+
+  return { pieces: allowed, removed };
+};
+
+// ========== Combined Diversity Pipeline ==========
+
+/**
+ * Run full diversity pipeline: dedupe + fragment quota + theme quota
+ */
+export const applyDiversityPipeline = (
+  pieces: QuadrantAgentPiece[],
+  existingFragmentCounts: Map<string, number> = new Map(),
+  existingThemeCounts: Map<string, number> = new Map(),
+  config: DedupeConfig = DEFAULT_DEDUPE_CONFIG
+): { pieces: QuadrantAgentPiece[]; stats: DiversityStats } => {
+  const filterReasons: Record<string, number> = {};
+  const initialCount = pieces.length;
+
+  // Step 1: Remove blacklisted
+  let current = pieces.filter(p => {
+    if (isBlacklistedPhrase(p.text || '')) {
+      filterReasons['blacklisted'] = (filterReasons['blacklisted'] || 0) + 1;
+      return false;
+    }
+    return true;
+  });
+  const afterBlacklist = current.length;
+
+  // Step 2: Dedupe
+  const dedupeResult = dedupePieces(current, config);
+  current = dedupeResult.pieces;
+  filterReasons['duplicate'] = dedupeResult.removed;
+  const afterDedupe = current.length;
+
+  // Step 3: Fragment quota
+  const fragmentResult = enforceFragmentQuota(current, existingFragmentCounts, config.maxPerFragment);
+  current = fragmentResult.pieces;
+  filterReasons['fragment_quota'] = fragmentResult.removed;
+
+  // Step 4: Theme quota
+  const themeResult = enforceThemeQuota(current, existingThemeCounts, config.maxPerTheme);
+  current = themeResult.pieces;
+  filterReasons['theme_quota'] = themeResult.removed;
+  const afterQuota = current.length;
+
+  // Calculate stats
+  const uniqueFragments = new Set(current.map(p => p.fragment_id).filter(Boolean));
+  const stats: DiversityStats = {
+    totalGenerated: initialCount,
+    afterBlacklist,
+    afterDedupe,
+    afterQuota,
+    uniqueRate: initialCount > 0 ? afterQuota / initialCount : 0,
+    fragmentCoverage: uniqueFragments.size,
+    filterReasons,
+  };
+
+  return { pieces: current, stats };
+};
+
+/**
+ * Log diversity stats to console
+ */
+export const logDiversityStats = (stats: DiversityStats, mode: string): void => {
+  console.log(`[DIVERSITY STATS] ${mode}:
+  Generated: ${stats.totalGenerated}
+  After blacklist: ${stats.afterBlacklist}
+  After dedupe: ${stats.afterDedupe}
+  After quota: ${stats.afterQuota}
+  Unique rate: ${(stats.uniqueRate * 100).toFixed(1)}%
+  Fragment coverage: ${stats.fragmentCoverage} unique fragments
+  Filter reasons: ${JSON.stringify(stats.filterReasons)}`);
+};
+
+// ========== Avoid Phrases for Retry ==========
+
+/**
+ * Extract phrases to avoid from rejected pieces
+ */
+export const extractAvoidPhrases = (
+  rejectedPieces: QuadrantAgentPiece[]
+): string[] => {
+  return rejectedPieces
+    .map(p => normalizeText(p.text || ''))
+    .filter(t => t.length > 0);
+};
+
+/**
+ * Check if a piece matches any avoid phrase
+ */
+export const matchesAvoidPhrase = (
+  piece: QuadrantAgentPiece,
+  avoidPhrases: string[]
+): boolean => {
+  const normalized = normalizeText(piece.text || '');
+  return avoidPhrases.some(phrase => {
+    if (normalized === phrase) return true;
+    return calculate3GramOverlap(normalized, phrase) > 0.7;
+  });
 };

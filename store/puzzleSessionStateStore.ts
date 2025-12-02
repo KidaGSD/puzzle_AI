@@ -3,6 +3,11 @@
  *
  * Holds pre-generated pieces from the multi-agent system.
  * QuadrantSpawner pulls pieces from this pool instead of generating on-demand.
+ *
+ * Includes session-level tracking for diversity:
+ * - usedTexts: prevents repeat phrases across quadrants
+ * - usedFragmentCounts: enforces per-fragment quotas
+ * - usedThemes: enforces per-theme quotas
  */
 
 import { create } from 'zustand';
@@ -16,6 +21,32 @@ import {
   AnchorType,
 } from '../domain/models';
 import { QuadrantType, PiecePriority } from '../types';
+import { getPreferenceStore, PieceOutcome } from '../ai/stores/preferenceProfileStore';
+
+// ========== Diversity Tracking ==========
+
+export interface DiversityTracking {
+  usedTexts: Set<string>;                    // Normalized piece texts used
+  usedFragmentCounts: Map<string, number>;   // Per-fragment usage count
+  usedThemes: Map<string, number>;           // Per-theme usage count
+}
+
+const MAX_FRAGMENT_USES = 2;  // Max pieces per fragment
+const MAX_THEME_USES = 3;     // Max pieces per theme keyword
+
+/**
+ * Normalize text for comparison
+ */
+const normalizeForTracking = (text: string): string => {
+  return text.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+};
+
+/**
+ * Extract theme keywords from text
+ */
+const extractThemeKeywords = (text: string): string[] => {
+  return normalizeForTracking(text).split(' ').filter(w => w.length > 3);
+};
 
 interface PreGeneratedPiece extends QuadrantAgentPiece {
   mode: DesignMode;
@@ -41,6 +72,9 @@ interface PuzzleSessionStateStore {
     function: PreGeneratedPiece[];
   };
 
+  // Diversity tracking across session
+  diversityTracking: DiversityTracking;
+
   // Actions
   setSessionState: (state: PuzzleSessionState) => void;
   setGenerating: (generating: boolean) => void;
@@ -50,10 +84,10 @@ interface PuzzleSessionStateStore {
   getAnchor: (type: AnchorType) => Anchor | null;
   getAnchors: () => Anchor[];
 
-  // Get next available piece for a quadrant
+  // Get next available piece for a quadrant (with diversity checks)
   getNextPiece: (quadrant: QuadrantType) => PreGeneratedPiece | null;
 
-  // Mark piece as used
+  // Mark piece as used (updates diversity tracking)
   markPieceUsed: (quadrant: QuadrantType, text: string) => void;
 
   // Reset session
@@ -61,6 +95,22 @@ interface PuzzleSessionStateStore {
 
   // Get all pieces for a quadrant
   getPiecesForQuadrant: (quadrant: QuadrantType) => PreGeneratedPiece[];
+
+  // Diversity helpers
+  getDiversityTracking: () => DiversityTracking;
+  isTextUsed: (text: string) => boolean;
+  isFragmentOverQuota: (fragmentId: string) => boolean;
+  getFragmentUsageCount: (fragmentId: string) => number;
+
+  // Phase 6: Preference feedback
+  recordPieceOutcome: (
+    quadrant: QuadrantType,
+    pieceId: string,
+    text: string,
+    fragmentId: string,
+    outcome: PieceOutcome,
+    themes?: string[]
+  ) => void;
 }
 
 const modeToQuadrant = (mode: DesignMode): QuadrantType => {
@@ -70,6 +120,12 @@ const modeToQuadrant = (mode: DesignMode): QuadrantType => {
 const quadrantToMode = (quadrant: QuadrantType): DesignMode => {
   return quadrant.toUpperCase() as DesignMode;
 };
+
+const createEmptyDiversityTracking = (): DiversityTracking => ({
+  usedTexts: new Set(),
+  usedFragmentCounts: new Map(),
+  usedThemes: new Map(),
+});
 
 export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, get) => ({
   sessionState: null,
@@ -86,6 +142,8 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
     expression: [],
     function: [],
   },
+
+  diversityTracking: createEmptyDiversityTracking(),
 
   setSessionState: (state) => {
     // Convert session pieces to pre-generated pieces pool
@@ -176,11 +234,32 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
   },
 
   getNextPiece: (quadrant) => {
-    const { preGeneratedPieces } = get();
+    const { preGeneratedPieces, diversityTracking } = get();
     const pieces = preGeneratedPieces[quadrant];
 
-    // Find first unused piece
-    const availablePiece = pieces.find(p => !p.used);
+    // Find first unused piece that passes diversity checks
+    const availablePiece = pieces.find(p => {
+      if (p.used) return false;
+
+      // Check if text already used
+      const normalizedText = normalizeForTracking(p.text || '');
+      if (diversityTracking.usedTexts.has(normalizedText)) {
+        console.log(`[puzzleSessionStateStore] Skipping "${p.text}" - text already used`);
+        return false;
+      }
+
+      // Check if fragment is over quota
+      const fragmentId = p.fragment_id;
+      if (fragmentId) {
+        const fragmentCount = diversityTracking.usedFragmentCounts.get(fragmentId) || 0;
+        if (fragmentCount >= MAX_FRAGMENT_USES) {
+          console.log(`[puzzleSessionStateStore] Skipping "${p.text}" - fragment over quota (${fragmentCount}/${MAX_FRAGMENT_USES})`);
+          return false;
+        }
+      }
+
+      return true;
+    });
 
     if (availablePiece) {
       console.log(`[puzzleSessionStateStore] Found piece for ${quadrant}: "${availablePiece.text}" (priority: ${availablePiece.priority})`);
@@ -192,20 +271,63 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
   },
 
   markPieceUsed: (quadrant, text) => {
+    const { sessionState } = get();
+
     set((state) => {
       const pieces = state.preGeneratedPieces[quadrant];
       const index = pieces.findIndex(p => p.text === text && !p.used);
 
       if (index >= 0) {
+        const piece = pieces[index];
         const updatedPieces = [...pieces];
-        updatedPieces[index] = { ...updatedPieces[index], used: true };
+        updatedPieces[index] = { ...piece, used: true };
+
+        // Update diversity tracking
+        const normalizedText = normalizeForTracking(text);
+        const newUsedTexts = new Set(state.diversityTracking.usedTexts);
+        newUsedTexts.add(normalizedText);
+
+        const newFragmentCounts = new Map(state.diversityTracking.usedFragmentCounts);
+        if (piece.fragment_id) {
+          const currentCount = newFragmentCounts.get(piece.fragment_id) || 0;
+          newFragmentCounts.set(piece.fragment_id, currentCount + 1);
+        }
+
+        const newThemeCounts = new Map(state.diversityTracking.usedThemes);
+        const themeKeywords = extractThemeKeywords(text);
+        for (const keyword of themeKeywords) {
+          const currentCount = newThemeCounts.get(keyword) || 0;
+          newThemeCounts.set(keyword, currentCount + 1);
+        }
+
+        // Phase 6: Record "placed" outcome for preference learning
+        if (sessionState?.session_id && piece.fragment_id) {
+          const preferenceStore = getPreferenceStore();
+          const mode = quadrantToMode(quadrant);
+          const pieceId = `${quadrant}-${piece.fragment_id}-${index}`;
+          preferenceStore.recordOutcome(
+            sessionState.session_id,
+            pieceId,
+            text,
+            piece.fragment_id,
+            mode,
+            'placed',
+            themeKeywords
+          );
+        }
 
         console.log(`[puzzleSessionStateStore] Marked piece as used: "${text}" in ${quadrant}`);
+        console.log(`[puzzleSessionStateStore] Diversity: ${newUsedTexts.size} texts, ${newFragmentCounts.size} fragments tracked`);
 
         return {
           preGeneratedPieces: {
             ...state.preGeneratedPieces,
             [quadrant]: updatedPieces,
+          },
+          diversityTracking: {
+            usedTexts: newUsedTexts,
+            usedFragmentCounts: newFragmentCounts,
+            usedThemes: newThemeCounts,
           },
         };
       }
@@ -229,11 +351,57 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
         expression: [],
         function: [],
       },
+      diversityTracking: createEmptyDiversityTracking(),
     });
   },
 
   getPiecesForQuadrant: (quadrant) => {
     return get().preGeneratedPieces[quadrant];
+  },
+
+  // Diversity helpers
+  getDiversityTracking: () => {
+    return get().diversityTracking;
+  },
+
+  isTextUsed: (text) => {
+    const normalized = normalizeForTracking(text);
+    return get().diversityTracking.usedTexts.has(normalized);
+  },
+
+  isFragmentOverQuota: (fragmentId) => {
+    const count = get().diversityTracking.usedFragmentCounts.get(fragmentId) || 0;
+    return count >= MAX_FRAGMENT_USES;
+  },
+
+  getFragmentUsageCount: (fragmentId) => {
+    return get().diversityTracking.usedFragmentCounts.get(fragmentId) || 0;
+  },
+
+  // Phase 6: Record piece outcome for preference learning
+  recordPieceOutcome: (quadrant, pieceId, text, fragmentId, outcome, themes = []) => {
+    const { sessionState } = get();
+    const sessionId = sessionState?.session_id;
+
+    if (!sessionId) {
+      console.log('[puzzleSessionStateStore] Cannot record outcome - no active session');
+      return;
+    }
+
+    const preferenceStore = getPreferenceStore();
+    const mode = quadrantToMode(quadrant);
+
+    preferenceStore.recordOutcome(
+      sessionId,
+      pieceId,
+      text,
+      fragmentId,
+      mode,
+      outcome,
+      themes
+    );
+
+    console.log(`[puzzleSessionStateStore] Recorded ${outcome} for piece "${text.slice(0, 30)}..." in ${quadrant}`);
   },
 }));
 
