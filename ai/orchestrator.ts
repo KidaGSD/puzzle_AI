@@ -50,9 +50,9 @@ import { v4 as uuidv4 } from "uuid";
 // Callback type for mascot proposals - passed in to avoid circular dependency
 type MascotProposalCallback = (proposal: MascotProposal) => void;
 
-// Feature flag for ADK integration
-// Set to true to use new ADK-based workflow, false for legacy
-const USE_ADK_WORKFLOW = process.env.USE_ADK_WORKFLOW === 'true' || false;
+// ADK is now the primary workflow - no feature flag needed
+// Legacy code kept temporarily for reference but not executed
+const USE_ADK_WORKFLOW = true;
 
 type DebouncedFn = (() => void) & { cancel?: () => void };
 
@@ -648,14 +648,123 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   let puzzleSessionCallback: ((state: PuzzleSessionState) => void) | null = null;
 
   /**
-   * Handle PUZZLE_SESSION_STARTED - triggers full puzzle pre-generation
+   * Handle PUZZLE_SESSION_STARTED - Thin adapter to ADK workflow
+   *
+   * This is now the primary handler. It:
+   * 1. Maps UI event payload to ADK runner input
+   * 2. Calls ADK runner (which handles all AI logic)
+   * 3. Maps ADK output back to UI-compatible format
+   * 4. Emits events for UI updates
+   */
+  const handlePuzzleSessionStartedADK = async (event: UIEvent) => {
+    const state = store.getState();
+    const payload: any = event.payload || {};
+
+    // Emit loading state
+    bus.emitType("AI_LOADING", {
+      source: 'puzzle_session',
+      message: 'Generating puzzle...',
+    } as AILoadingPayload);
+
+    const puzzleType: PuzzleType = payload.puzzleType || "CLARIFY";
+    const anchors = payload.anchors || [];
+
+    console.log(`[orchestrator] PUZZLE_SESSION_STARTED: type=${puzzleType}, fragments=${state.fragments.length}`);
+
+    try {
+      // ===== ADK RUNNER CALL =====
+      // This single call handles:
+      // - Feature extraction
+      // - Central question generation
+      // - Per-mode fragment retrieval
+      // - Quadrant agent execution (real LlmAgent)
+      // - Diversity filtering
+      // - PreGen pool tracking
+      const result = await adkStartPuzzleSession({
+        processAim: state.project.processAim,
+        puzzleType,
+        centralQuestion: payload.centralQuestion,
+        fragments: state.fragments,
+        anchors,
+        preferenceProfile: state.preferenceProfile
+      }, client);
+
+      // ===== STORE UPDATE =====
+      const sessionState = result.sessionState;
+      store.addPuzzle({
+        id: sessionState.session_id,
+        centralQuestion: sessionState.central_question,
+        projectId: state.project.id,
+        type: sessionState.puzzle_type,
+        createdFrom: 'ai_suggested',
+        createdAt: Date.now(),
+      });
+
+      console.log(`[orchestrator] Puzzle generated: "${sessionState.central_question}" (quality: ${sessionState.quality_score})`);
+
+      // ===== OUTPUT MAPPING =====
+      // Transform ADK schema to legacy UI format
+      const mapPieces = (pieces: any[], mode: DesignMode) =>
+        (pieces || []).map(p => ({
+          text: p.text,
+          priority: p.priority,
+          saturation_level: p.saturationLevel,
+          fragment_id: p.fragmentId,
+          fragment_title: p.fragmentTitle,
+          fragment_summary: p.fragmentSummary,
+          image_url: p.imageUrl,
+          mode,
+        }));
+
+      const legacySessionState: PuzzleSessionState = {
+        session_id: sessionState.session_id,
+        puzzle_type: sessionState.puzzle_type,
+        central_question: sessionState.central_question,
+        process_aim: state.project.processAim,
+        anchors,
+        form_pieces: mapPieces(sessionState.pre_gen_pieces.FORM, 'FORM'),
+        motion_pieces: mapPieces(sessionState.pre_gen_pieces.MOTION, 'MOTION'),
+        expression_pieces: mapPieces(sessionState.pre_gen_pieces.EXPRESSION, 'EXPRESSION'),
+        function_pieces: mapPieces(sessionState.pre_gen_pieces.FUNCTION, 'FUNCTION'),
+        generation_status: 'completed',
+      };
+
+      // ===== UI NOTIFICATION =====
+      if (puzzleSessionCallback) {
+        puzzleSessionCallback(legacySessionState);
+      }
+
+      bus.emitType("PUZZLE_SESSION_GENERATED" as UIEventType, {
+        sessionState: legacySessionState,
+        errors: result.errors,
+      });
+
+      bus.emitType("AI_SUCCESS", {
+        source: 'puzzle_session',
+        message: 'Puzzle pieces ready!',
+      });
+
+    } catch (error) {
+      console.error("[orchestrator] PUZZLE_SESSION_STARTED failed:", error);
+      bus.emitType("AI_ERROR", {
+        source: 'puzzle_session',
+        message: 'Failed to generate puzzle pieces. Please try again.',
+        recoverable: true,
+        retryEventType: 'PUZZLE_SESSION_STARTED',
+        retryPayload: payload,
+      } as AIErrorPayload);
+    }
+  };
+
+  /**
+   * Handle PUZZLE_SESSION_STARTED - triggers full puzzle pre-generation (Legacy)
    * This runs the PuzzleSessionAgent which:
    * 1. Extracts features from fragments (keywords, themes, etc.)
    * 2. Generates central question grounded in fragment features
    * 3. Runs 4 quadrant agents in parallel with feature context
    * 4. Returns pre-generated pieces for all quadrants
    */
-  const handlePuzzleSessionStarted = async (event: UIEvent) => {
+  const handlePuzzleSessionStartedLegacy = async (event: UIEvent) => {
     const state = store.getState();
     const payload: any = event.payload || {};
 
@@ -667,7 +776,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
     // ========== Phase 2: Feature Extraction with Caching ==========
     // Use the feature store for cached extraction, reducing API costs
-    const featureStore = initFeatureStore(client);
+    initFeatureStore(client);
 
     // ═══════════════════════════════════════════════════════════════════════
     // INTELLIGENT FRAGMENT RANKING: Replace fixed 6/4 with scored selection
@@ -933,7 +1042,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     }));
 
     try {
-      const newPieces = await regenerateQuadrant(
+      const newPieces = await legacyRegenerateQuadrant(
         mode,
         sessionState,
         fragmentsSummary,
@@ -993,10 +1102,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         // PIECE_DELETED: user removed piece from board
         handlePieceDeleted(event);
         break;
-      // Multi-agent system events
+      // Multi-agent system events - ADK is now the primary workflow
       case "PUZZLE_SESSION_STARTED":
-        console.log('[orchestrator] handling PUZZLE_SESSION_STARTED');
-        safeAsync(() => handlePuzzleSessionStarted(event), "PUZZLE_SESSION_STARTED");
+        console.log('[orchestrator] handling PUZZLE_SESSION_STARTED via ADK');
+        safeAsync(() => handlePuzzleSessionStartedADK(event), "PUZZLE_SESSION_STARTED");
         break;
       case "PUZZLE_SESSION_COMPLETED":
         console.log('[orchestrator] handling PUZZLE_SESSION_COMPLETED');

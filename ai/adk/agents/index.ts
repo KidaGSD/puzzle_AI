@@ -3,8 +3,8 @@
  */
 
 export {
-  createQuadrantAgent,
-  createAllQuadrantAgents,
+  createQuadrantAgentConfig,
+  createAllQuadrantAgentConfigs,
   runQuadrantAgentADK,
   MODE_CONFIG,
   PUZZLE_TYPE_CONFIG
@@ -16,3 +16,8 @@ export {
   createFilterTool,
   retryFilterWithAvoidPhrases
 } from './filterAgent';
+
+export {
+  runCentralQuestionAgent
+} from './centralQuestionAgent';
+export type { CentralQuestionInput, CentralQuestionOutput } from './centralQuestionAgent';

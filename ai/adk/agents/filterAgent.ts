@@ -8,8 +8,7 @@
  * - Summary-not-title validation
  */
 
-import { FunctionTool } from "../../../../adk-typescript/src/tools/FunctionTool";
-import { ToolContext } from "../../../../adk-typescript/src/tools/ToolContext";
+import { SimpleFunctionTool as FunctionTool, ToolContext } from "../types/adkTypes";
 import { PieceSchema, FilterResultSchema } from "../schemas/puzzleSchemas";
 import { DesignMode } from "../../../domain/models";
 

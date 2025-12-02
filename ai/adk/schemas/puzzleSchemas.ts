@@ -11,14 +11,14 @@ import { DesignMode, PuzzleType, SaturationLevel, PiecePriority } from "../../..
 
 export interface FragmentFeatureSchema {
   fragmentId: string;
-  analysisStatus: 'pending' | 'analyzed' | 'fallback' | 'error';
+  analysisStatus: string;  // 'pending' | 'complete' | 'failed' | 'stale' | 'analyzed' | 'fallback' | 'error'
   updatedAt: number;
 
   // Text features
   keywords?: string[];
   themes?: string[];
   entities?: string[];
-  sentiment?: 'positive' | 'negative' | 'neutral';
+  sentiment?: string;  // 'positive' | 'negative' | 'neutral'
 
   // Image features (for IMAGE type)
   palette?: string[];

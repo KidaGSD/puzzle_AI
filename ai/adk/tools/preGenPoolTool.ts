@@ -5,8 +5,7 @@
  * Provides getNextPiece logic that skips duplicates/over-quota fragments.
  */
 
-import { FunctionTool } from "../../../../adk-typescript/src/tools/FunctionTool";
-import { ToolContext } from "../../../../adk-typescript/src/tools/ToolContext";
+import { SimpleFunctionTool as FunctionTool, ToolContext } from "../types/adkTypes";
 import { PieceSchema, PreGenPoolToolResponse } from "../schemas/puzzleSchemas";
 import { DesignMode } from "../../../domain/models";
 

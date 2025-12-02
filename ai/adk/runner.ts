@@ -6,24 +6,30 @@
  * - regenerateQuadrant: Regenerate pieces for a single quadrant
  * - synthesizePuzzle: Generate puzzle summary
  *
- * Uses ADK Session for state management and event streaming.
+ * Uses real ADK patterns:
+ * - Feature extraction via featureStoreTool
+ * - Intelligent retrieval via retrievalTool
+ * - Real LlmAgent execution via Runner
+ * - PreGen pool for usage tracking
  */
 
-import { Session } from "../../../adk-typescript/src/sessions/Session";
-import { State } from "../../../adk-typescript/src/sessions/State";
-import { Event } from "../../../adk-typescript/src/events/Event";
+import { SimpleSession as Session, ToolContext } from "./types/adkTypes";
 import { DesignMode, PuzzleType, Fragment, Anchor, UserPreferenceProfile } from "../../domain/models";
 import {
-  PuzzleSessionStateSchema,
   PieceSchema,
+  PuzzleSessionStateSchema,
   QuadrantAgentInputSchema,
   QuadrantAgentOutputSchema,
   SynthesisInputSchema,
-  SynthesisOutputSchema
+  SynthesisOutputSchema,
+  FragmentFeatureSchema
 } from "./schemas/puzzleSchemas";
-import { runQuadrantAgentADK, MODE_CONFIG, PUZZLE_TYPE_CONFIG } from "./agents/quadrantAgent";
+import { runQuadrantAgentADK, MODE_CONFIG } from "./agents/quadrantAgent";
+import { runCentralQuestionAgent } from "./agents/centralQuestionAgent";
 import { applyDiversityFilter } from "./agents/filterAgent";
+import { getFragmentFeatures } from "./tools/featureStoreTool";
 import { getFragmentsForMode } from "./tools/retrievalTool";
+import { enqueuePieces, getPoolStats } from "./tools/preGenPoolTool";
 import { LLMClient } from "../adkClient";
 import { v4 as uuidv4 } from "uuid";
 
@@ -31,6 +37,7 @@ import { v4 as uuidv4 } from "uuid";
 
 /**
  * Create a new puzzle session with initial state
+ * Uses real Set/Map for tracking, with serialization helpers
  */
 export const createPuzzleSession = (
   userId: string,
@@ -40,38 +47,49 @@ export const createPuzzleSession = (
 ): Session => {
   const sessionId = uuidv4();
 
-  const initialState: PuzzleSessionStateSchema = {
-    sessionId,
-    userId,
-    startedAt: Date.now(),
-    currentStage: 'gathering',
-    puzzleType,
-    centralQuestion,
-    preGenPieces: {
-      FORM: [],
-      MOTION: [],
-      EXPRESSION: [],
-      FUNCTION: []
-    },
-    usedTexts: new Set(),
-    usedFragmentCounts: new Map(),
-    qualityScore: 0,
-    completionPercentage: 0
-  };
-
-  return new Session({
+  // Create session with properly structured state
+  const session = new Session({
     id: sessionId,
     appName: 'puzzle_app',
     userId,
     state: {
-      ...initialState,
+      sessionId,
+      userId,
+      startedAt: Date.now(),
+      currentStage: 'gathering',
+      puzzleType,
+      centralQuestion,
       processAim,
-      // Convert Set/Map to serializable format
-      usedTexts: [],
-      usedFragmentCounts: {}
+      // PreGen pools per mode
+      preGenPool_pieces: {
+        FORM: [],
+        MOTION: [],
+        EXPRESSION: [],
+        FUNCTION: []
+      },
+      // Usage tracking (arrays for serialization, converted to Set/Map at runtime)
+      preGenPool_usedTexts: [],
+      preGenPool_fragmentCounts: {},
+      // Fragment features cache
+      fragmentFeatures: {},
+      // Quality metrics
+      qualityScore: 0,
+      completionPercentage: 0
     }
   });
+
+  return session;
 };
+
+/**
+ * Create tool context from session
+ */
+const createToolContext = (session: Session): ToolContext => ({
+  invocationContext: {
+    session,
+    incrementLlmCallCount: () => {}
+  }
+});
 
 // ========== Main Workflow: Start Puzzle Session ==========
 
@@ -89,12 +107,14 @@ export interface PuzzleSessionResult {
 /**
  * Start a full puzzle session with pre-generation for all quadrants
  *
- * Flow:
- * 1. Rank and select fragments (retrieval)
- * 2. Run 4 quadrant agents in parallel
- * 3. Apply diversity filter to each
- * 4. Enqueue to preGen pool
- * 5. Return session state
+ * ADK Flow:
+ * 1. Extract features from fragments (featureStoreTool)
+ * 2. Generate central question (CentralQuestionAgent)
+ * 3. Get mode-specific fragments (retrievalTool per mode)
+ * 4. Run 4 quadrant agents in parallel (real LlmAgent execution)
+ * 5. Apply diversity filter to each
+ * 6. Enqueue to preGen pool with usage tracking
+ * 7. Return session state
  */
 export const startPuzzleSession = async (
   input: {
@@ -110,41 +130,108 @@ export const startPuzzleSession = async (
   const errors: string[] = [];
   const startTime = Date.now();
 
-  // Generate central question if not provided
-  let centralQuestion = input.centralQuestion;
-  if (!centralQuestion) {
-    centralQuestion = await generateCentralQuestion(input.processAim, input.fragments, client);
-  }
+  console.log(`[PuzzleRunner] Starting ADK session: type=${input.puzzleType}, fragments=${input.fragments.length}`);
 
-  console.log(`[PuzzleRunner] Starting session: type=${input.puzzleType}, question="${centralQuestion}"`);
-
-  // Create mock session for tool context
-  const session = createPuzzleSession('user', input.processAim, input.puzzleType, centralQuestion);
+  // Create session with initial state
+  const session = createPuzzleSession('user', input.processAim, input.puzzleType, '');
   session.state.set('fragments', input.fragments);
   session.state.set('llmClient', client);
 
-  const mockToolContext = {
-    invocationContext: {
-      session
-    }
-  } as any;
+  const toolContext = createToolContext(session);
 
-  // Run quadrant agents in parallel
+  // ========== Step 1: Extract features from fragments ==========
+  console.log('[PuzzleRunner] Step 1: Extracting features...');
+  let fragmentFeatures: FragmentFeatureSchema[] = [];
+  try {
+    const featureResult = await getFragmentFeatures(
+      { fragmentIds: input.fragments.map(f => f.id), forceRefresh: false },
+      toolContext
+    );
+    if (featureResult.success && featureResult.data) {
+      fragmentFeatures = featureResult.data.features;
+      session.state.set('fragmentFeatures', fragmentFeatures);
+      console.log(`[PuzzleRunner] Extracted features: ${featureResult.data.cacheHits} cached, ${featureResult.data.newExtractions} new`);
+    }
+  } catch (err) {
+    console.warn('[PuzzleRunner] Feature extraction failed, continuing without:', err);
+  }
+
+  // ========== Step 2: Generate central question ==========
+  console.log('[PuzzleRunner] Step 2: Generating central question...');
+  let centralQuestion = input.centralQuestion;
+  if (!centralQuestion) {
+    try {
+      const questionResult = await runCentralQuestionAgent({
+        processAim: input.processAim,
+        puzzleType: input.puzzleType,
+        fragments: input.fragments,
+        fragmentFeatures,
+        previousQuestions: [] // Could be passed from store
+      }, client);
+
+      centralQuestion = questionResult.question;
+      console.log(`[PuzzleRunner] Central question: "${centralQuestion}" (valid=${questionResult.isValid}, retries=${questionResult.retryCount})`);
+    } catch (err) {
+      console.warn('[PuzzleRunner] Central question generation failed:', err);
+      centralQuestion = `What is the core design direction for ${input.processAim.split(' ').slice(0, 4).join(' ')}?`;
+    }
+  }
+  session.state.set('centralQuestion', centralQuestion);
+
+  // ========== Step 3: Get mode-specific fragments via retrieval ==========
+  console.log('[PuzzleRunner] Step 3: Retrieving mode-specific fragments...');
+  const usedFragmentCounts = session.state.get('preGenPool_fragmentCounts', {}) as Record<string, number>;
+  const modeFragments: Record<DesignMode, Fragment[]> = {
+    FORM: [],
+    MOTION: [],
+    EXPRESSION: [],
+    FUNCTION: []
+  };
+
   const modes: DesignMode[] = ['FORM', 'MOTION', 'EXPRESSION', 'FUNCTION'];
+  for (const mode of modes) {
+    try {
+      const retrievalResult = await getFragmentsForMode({
+        mode,
+        processAim: input.processAim,
+        centralQuestion,
+        limit: 6,
+        usedFragmentCounts
+      }, toolContext);
+
+      if (retrievalResult.success && retrievalResult.data) {
+        // Get full fragment objects from IDs
+        const selectedIds = retrievalResult.data.global.map(s => s.fragmentId);
+        modeFragments[mode] = input.fragments.filter(f => selectedIds.includes(f.id));
+        console.log(`[PuzzleRunner] ${mode}: ${modeFragments[mode].length} fragments selected`);
+      } else {
+        // Fallback to legacy selection
+        modeFragments[mode] = selectFragmentsForMode(input.fragments, mode, 6);
+      }
+    } catch (err) {
+      console.warn(`[PuzzleRunner] Retrieval failed for ${mode}, using fallback:`, err);
+      modeFragments[mode] = selectFragmentsForMode(input.fragments, mode, 6);
+    }
+  }
+
+  // ========== Step 4: Run quadrant agents in parallel ==========
+  console.log('[PuzzleRunner] Step 4: Running quadrant agents...');
   const quadrantResults = await Promise.allSettled(
     modes.map(mode => runQuadrantForSession(
       mode,
       input.puzzleType,
       centralQuestion!,
       input.processAim,
-      input.fragments,
+      modeFragments[mode], // Use retrieval-selected fragments
       input.anchors,
       input.preferenceProfile,
+      fragmentFeatures,
       client
     ))
   );
 
-  // Collect results
+  // ========== Step 5 & 6: Filter and enqueue to pool ==========
+  console.log('[PuzzleRunner] Step 5-6: Filtering and enqueueing...');
   const preGenPieces: Record<DesignMode, PieceSchema[]> = {
     FORM: [],
     MOTION: [],
@@ -163,11 +250,21 @@ export const startPuzzleSession = async (
       preGenPieces[mode] = result.value.pieces;
       totalQuality += result.value.meta.qualityScore;
       successCount++;
+
+      // Enqueue to preGen pool with usage tracking
+      await enqueuePieces({ mode, pieces: result.value.pieces }, toolContext);
+
       console.log(`[PuzzleRunner] ${mode}: ${result.value.pieces.length} pieces, quality=${result.value.meta.qualityScore}`);
     } else {
       errors.push(`${mode} generation failed: ${result.reason}`);
       console.error(`[PuzzleRunner] ${mode} failed:`, result.reason);
     }
+  }
+
+  // Log pool stats
+  const poolStats = await getPoolStats({}, toolContext);
+  if (poolStats.success) {
+    console.log(`[PuzzleRunner] Pool stats: ${JSON.stringify(poolStats.stats.perMode)}`);
   }
 
   const avgQuality = successCount > 0 ? Math.round(totalQuality / successCount) : 0;
@@ -189,20 +286,32 @@ export const startPuzzleSession = async (
 
 /**
  * Run a single quadrant's generation pipeline
+ * Now accepts pre-selected fragments and features from retrieval
  */
 const runQuadrantForSession = async (
   mode: DesignMode,
   puzzleType: PuzzleType,
   centralQuestion: string,
   processAim: string,
-  fragments: Fragment[],
+  fragments: Fragment[], // Pre-selected by retrieval tool
   anchors: Anchor[],
   preferenceProfile: UserPreferenceProfile,
+  fragmentFeatures: FragmentFeatureSchema[], // Features from extraction
   client: LLMClient
 ): Promise<QuadrantAgentOutputSchema> => {
-  // Select fragments optimized for this mode
-  const modeConfig = MODE_CONFIG[mode];
-  const selectedFragments = selectFragmentsForMode(fragments, mode, 6);
+  // Use fragments directly (already selected by retrieval)
+  // Enrich with features if available
+  const enrichedFragments = fragments.map(f => {
+    const features = fragmentFeatures.find(ft => ft.fragmentId === f.id);
+    return {
+      id: f.id,
+      title: f.title || f.summary?.slice(0, 30) || 'Untitled',
+      summary: f.summary || f.content?.slice(0, 100) || '',
+      tags: f.tags,
+      imageUrl: f.type === 'IMAGE' ? f.content : undefined,
+      uniqueInsight: features?.uniqueInsight || undefined
+    };
+  });
 
   // Build input
   const input: QuadrantAgentInputSchema = {
@@ -210,25 +319,18 @@ const runQuadrantForSession = async (
     puzzleType,
     centralQuestion,
     processAim,
-    relevantFragments: selectedFragments.map(f => ({
-      id: f.id,
-      title: f.title || f.summary?.slice(0, 30) || 'Untitled',
-      summary: f.summary || f.content?.slice(0, 100) || '',
-      tags: f.tags,
-      imageUrl: f.type === 'IMAGE' ? f.content : undefined,
-      uniqueInsight: undefined
-    })),
+    relevantFragments: enrichedFragments,
     existingPieces: [],
     anchors: anchors.map(a => ({ type: a.type as 'STARTING' | 'SOLUTION', text: a.text })),
-    requestedCount: 4,
+    requestedCount: 6, // Over-generate, then filter
     maxTotalChars: 200,
     preferenceHints: buildPreferenceHint(preferenceProfile, puzzleType, mode)
   };
 
-  // Generate pieces
+  // Generate pieces via real ADK agent
   const rawOutput = await runQuadrantAgentADK(input, client);
 
-  // Apply diversity filter
+  // Apply diversity filter (over-generate + filter pattern)
   const filtered = applyDiversityFilter(rawOutput.pieces, [], []);
 
   return {
@@ -376,40 +478,6 @@ export const regenerateQuadrant = async (
       qualityScore: filtered.stats.qualityScore
     }
   };
-};
-
-// ========== Central Question Generation ==========
-
-/**
- * Generate central question from fragments and process aim
- */
-const generateCentralQuestion = async (
-  processAim: string,
-  fragments: Fragment[],
-  client: LLMClient
-): Promise<string> => {
-  const fragmentSummaries = fragments
-    .slice(0, 5)
-    .map(f => f.summary || f.content?.slice(0, 100))
-    .filter(Boolean)
-    .join('; ');
-
-  const prompt = `Given this design process aim: "${processAim}"
-And these fragment insights: ${fragmentSummaries}
-
-Generate a single, clear central question (10-15 words) that captures the core design challenge.
-The question should be open-ended and inspire exploration.
-
-Return ONLY the question, no quotes or explanation.`;
-
-  try {
-    const response = await client.generate(prompt, 0.7);
-    const question = response.trim().replace(/^["']|["']$/g, '');
-    return question || 'What is the core design direction?';
-  } catch (error) {
-    console.warn('[PuzzleRunner] Central question generation failed:', error);
-    return 'What is the core design direction?';
-  }
 };
 
 // ========== Synthesize Puzzle ==========

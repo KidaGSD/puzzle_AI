@@ -5,9 +5,8 @@
  * Provides cached access to extracted features (keywords, themes, uniqueInsight).
  */
 
-import { FunctionTool } from "../../../../adk-typescript/src/tools/FunctionTool";
-import { ToolContext } from "../../../../adk-typescript/src/tools/ToolContext";
-import { getFeatureStore, initFeatureStore } from "../../stores/fragmentFeatureStore";
+import { SimpleFunctionTool as FunctionTool, ToolContext } from "../types/adkTypes";
+import { initFeatureStore } from "../../stores/fragmentFeatureStore";
 import { FragmentFeatureSchema, FeatureStoreToolResponse } from "../schemas/puzzleSchemas";
 import { Fragment } from "../../../domain/models";
 import { LLMClient } from "../../adkClient";
@@ -42,8 +41,8 @@ export const getFragmentFeatures = async (
       if (!fragment) continue;
 
       // Check cache first
-      const cached = store.get(fragId);
-      if (cached && !params.forceRefresh) {
+      const cached = store.getCachedFeatures(fragId);
+      if (cached && !params.forceRefresh && cached.analysisStatus === 'complete') {
         results.push({
           fragmentId: fragId,
           analysisStatus: cached.analysisStatus || 'analyzed',
@@ -52,15 +51,15 @@ export const getFragmentFeatures = async (
           themes: cached.textFeatures?.themes,
           entities: cached.textFeatures?.entities,
           sentiment: cached.textFeatures?.sentiment,
-          palette: cached.imageFeatures?.palette,
+          palette: cached.imageFeatures?.colors,
           objects: cached.imageFeatures?.objects,
           mood: cached.imageFeatures?.mood,
           uniqueInsight: cached.uniqueInsight
         });
         cacheHits++;
       } else {
-        // Extract features
-        const features = await store.getOrExtract(fragment);
+        // Extract features using getFeatures (which handles caching internally)
+        const features = await store.getFeatures(fragment);
         results.push({
           fragmentId: fragId,
           analysisStatus: features.analysisStatus || 'analyzed',
@@ -69,7 +68,7 @@ export const getFragmentFeatures = async (
           themes: features.textFeatures?.themes,
           entities: features.textFeatures?.entities,
           sentiment: features.textFeatures?.sentiment,
-          palette: features.imageFeatures?.palette,
+          palette: features.imageFeatures?.colors,
           objects: features.imageFeatures?.objects,
           mood: features.imageFeatures?.mood,
           uniqueInsight: features.uniqueInsight

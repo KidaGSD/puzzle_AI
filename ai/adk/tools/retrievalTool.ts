@@ -5,16 +5,15 @@
  * Replaces fixed 6/4 sampling with scored, elastic budgets.
  */
 
-import { FunctionTool } from "../../../../adk-typescript/src/tools/FunctionTool";
-import { ToolContext } from "../../../../adk-typescript/src/tools/ToolContext";
+import { SimpleFunctionTool as FunctionTool, ToolContext } from "../types/adkTypes";
 import { RetrievalResultSchema, RetrievalScoreSchema, RetrievalToolResponse } from "../schemas/puzzleSchemas";
 import { Fragment, DesignMode } from "../../../domain/models";
-import { FragmentRanker, RankerConfig } from "../../retrieval/fragmentRanker";
+import { FragmentRanker, RankedFragment, SelectionBudget } from "../../retrieval/fragmentRanker";
 
 /**
  * Default ranker configuration
  */
-const DEFAULT_RANKER_CONFIG: RankerConfig = {
+const DEFAULT_RANKER_CONFIG: SelectionBudget = {
   totalTarget: 24,
   perQuadrant: 6,
   maxTextPerQuadrant: 4,
@@ -30,7 +29,7 @@ export const rankFragments = async (
   params: {
     processAim: string;
     centralQuestion?: string;
-    config?: Partial<RankerConfig>;
+    config?: Partial<SelectionBudget>;
     usedFragmentCounts?: Record<string, number>;
   },
   context: ToolContext
@@ -54,33 +53,28 @@ export const rankFragments = async (
 
     const result = await ranker.rankAndSelect(fragments, params.processAim);
 
-    // Convert to schema format
-    const globalScores: RetrievalScoreSchema[] = result.global.map(r => ({
+    // Convert to schema format (map RankedFragment fields to schema)
+    const toScore = (r: RankedFragment, usedCounts: Record<string, number>): RetrievalScoreSchema => ({
       fragmentId: r.fragment.id,
       relevanceScore: r.relevanceScore,
-      diversityScore: r.diversityScore,
-      noveltyScore: calculateNoveltyScore(r.fragment.id, usedCounts),
-      totalScore: r.totalScore,
-      reasons: r.reasons || []
-    }));
+      diversityScore: 1 - r.diversityPenalty, // Invert penalty to score
+      noveltyScore: r.noveltyBonus || calculateNoveltyScore(r.fragment.id, usedCounts),
+      totalScore: r.score,
+      reasons: [] // RankedFragment doesn't have reasons, would need to generate
+    });
+
+    const globalScores: RetrievalScoreSchema[] = result.global.map(r => toScore(r, usedCounts));
 
     const perModeScores = new Map<DesignMode, RetrievalScoreSchema[]>();
     result.perMode.forEach((rankings, mode) => {
-      perModeScores.set(mode, rankings.map(r => ({
-        fragmentId: r.fragment.id,
-        relevanceScore: r.relevanceScore,
-        diversityScore: r.diversityScore,
-        noveltyScore: calculateNoveltyScore(r.fragment.id, usedCounts),
-        totalScore: r.totalScore,
-        reasons: r.reasons || []
-      })));
+      perModeScores.set(mode, rankings.map(r => toScore(r, usedCounts)));
     });
 
     // Calculate stats
     const textCount = result.global.filter(r => r.fragment.type !== 'IMAGE').length;
     const imageCount = result.global.filter(r => r.fragment.type === 'IMAGE').length;
     const avgRelevance = result.global.reduce((sum, r) => sum + r.relevanceScore, 0) / result.global.length;
-    const avgDiversity = result.global.reduce((sum, r) => sum + r.diversityScore, 0) / result.global.length;
+    const avgDiversity = result.global.reduce((sum, r) => sum + (1 - r.diversityPenalty), 0) / result.global.length;
 
     return {
       success: true,

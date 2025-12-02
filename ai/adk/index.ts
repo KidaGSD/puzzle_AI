@@ -2,7 +2,13 @@
  * ADK Integration Index
  *
  * Main entry point for ADK-based puzzle workflow system.
- * Exports runner, agents, tools, and schemas for integration.
+ *
+ * This is the REAL ADK implementation that:
+ * - Uses LlmAgent and Runner for agent execution
+ * - Uses retrieval/feature tools for intelligent fragment selection
+ * - Uses CentralQuestionAgent for validated question generation
+ * - Tracks usage via PreGen pool
+ * - Provides preference-based hints
  */
 
 // Runner - main workflow orchestration
@@ -10,21 +16,23 @@ export {
   createPuzzleSession,
   startPuzzleSession,
   regenerateQuadrant,
-  synthesizePuzzle,
-  PuzzleSessionResult
+  synthesizePuzzle
 } from './runner';
+export type { PuzzleSessionResult } from './runner';
 
 // Agents
 export {
-  createQuadrantAgent,
-  createAllQuadrantAgents,
+  createQuadrantAgentConfig,
+  createAllQuadrantAgentConfigs,
   runQuadrantAgentADK,
   MODE_CONFIG,
   PUZZLE_TYPE_CONFIG,
   applyDiversityFilter,
   filterPieces,
-  createFilterTool
+  createFilterTool,
+  runCentralQuestionAgent
 } from './agents';
+export type { CentralQuestionInput, CentralQuestionOutput } from './agents';
 
 // Tools
 export {
@@ -38,8 +46,31 @@ export {
   getNextPiece,
   peekPieces,
   clearPool,
-  getPoolStats
+  getPoolStats,
+  createPreferenceTools,
+  readPreferenceHints,
+  updatePreferenceStats,
+  getProfileSummary,
+  resetProfile
 } from './tools';
+export type { PreferenceStats, PreferenceProfile, PreferenceAction } from './tools';
 
 // Schemas
 export * from './schemas/puzzleSchemas';
+
+// Types - including new LlmAgent and Runner
+export {
+  SimpleSession,
+  SimpleSessionState,
+  SimpleFunctionTool,
+  LlmAgent,
+  Runner
+} from './types/adkTypes';
+export type {
+  Session,
+  SessionState,
+  ToolContext,
+  LlmAgentOptions,
+  RunnerOptions,
+  RunResult
+} from './types/adkTypes';

@@ -8,12 +8,17 @@
  * - Callbacks for validation and backfill
  */
 
-import { LlmAgent, LlmAgentOptions } from "../../../../adk-typescript/src/agents/LlmAgent";
-import { FunctionTool } from "../../../../adk-typescript/src/tools/FunctionTool";
-import { CallbackContext } from "../../../../adk-typescript/src/agents/CallbackContext";
-import { LlmRequest } from "../../../../adk-typescript/src/models/LlmRequest";
-import { LlmResponse } from "../../../../adk-typescript/src/models/LlmResponse";
-import { ToolContext } from "../../../../adk-typescript/src/tools/ToolContext";
+import {
+  LlmAgentOptions,
+  LlmRequest,
+  LlmResponse,
+  CallbackContext,
+  ToolContext,
+  SimpleFunctionTool as FunctionTool,
+  SimpleSession,
+  LlmAgent,
+  Runner
+} from "../types/adkTypes";
 import { DesignMode, PuzzleType, PiecePriority } from "../../../domain/models";
 import { QuadrantAgentInputSchema, QuadrantAgentOutputSchema, PieceSchema } from "../schemas/puzzleSchemas";
 import { priorityToSaturation } from "../../../constants/colors";
@@ -308,10 +313,11 @@ const afterModelCallback = async (
 // ========== Agent Factory ==========
 
 /**
- * Create a QuadrantAgent for a specific mode
+ * Create a QuadrantAgent configuration for a specific mode
+ * Returns the options that would be used to create an LlmAgent
  */
-export const createQuadrantAgent = (mode: DesignMode): LlmAgent => {
-  const options: LlmAgentOptions = {
+export const createQuadrantAgentConfig = (mode: DesignMode): LlmAgentOptions => {
+  return {
     name: `quadrant_${mode.toLowerCase()}`,
     model: 'gemini-2.0-flash',
     description: `Generate puzzle pieces for the ${mode} quadrant`,
@@ -337,76 +343,232 @@ export const createQuadrantAgent = (mode: DesignMode): LlmAgent => {
       maxOutputTokens: 2048
     }
   };
-
-  return new LlmAgent(options);
 };
 
 /**
- * Create all 4 quadrant agents
+ * Create all 4 quadrant agent configs
  */
-export const createAllQuadrantAgents = (): Map<DesignMode, LlmAgent> => {
-  const agents = new Map<DesignMode, LlmAgent>();
+export const createAllQuadrantAgentConfigs = (): Map<DesignMode, LlmAgentOptions> => {
+  const configs = new Map<DesignMode, LlmAgentOptions>();
   const modes: DesignMode[] = ['FORM', 'MOTION', 'EXPRESSION', 'FUNCTION'];
 
   for (const mode of modes) {
-    agents.set(mode, createQuadrantAgent(mode));
+    configs.set(mode, createQuadrantAgentConfig(mode));
   }
 
-  return agents;
+  return configs;
 };
 
-// ========== Standalone Runner (for compatibility) ==========
+// ========== Real ADK Runner Implementation ==========
 
 /**
- * Run quadrant agent directly with input/output
- * This provides a simpler interface for the existing orchestrator
+ * Run quadrant agent using real ADK LlmAgent and Runner
+ * No legacy delegation - pure ADK execution
  */
 export const runQuadrantAgentADK = async (
   input: QuadrantAgentInputSchema,
-  client: any
+  client: { generate: (prompt: string, temperature?: number) => Promise<string> }
 ): Promise<QuadrantAgentOutputSchema> => {
-  // For now, delegate to existing baseQuadrantAgent
-  // This will be replaced with full ADK runner integration
-  const { runQuadrantAgent } = await import("../../agents/baseQuadrantAgent");
+  const mode = input.mode;
 
-  const legacyInput = {
-    mode: input.mode,
-    puzzle_type: input.puzzleType,
+  // Create session with input state
+  const session = new SimpleSession({
+    id: `quadrant_${mode}_${Date.now()}`,
+    appName: 'puzzle_app',
+    userId: 'user',
+    state: {
+      quadrantInput: input
+    }
+  });
+
+  // Create the LlmAgent with proper config
+  const agentConfig = createQuadrantAgentConfig(mode);
+  const agent = new LlmAgent(agentConfig);
+
+  // Create runner
+  const runner = new Runner({ agent, session });
+
+  // Build user content from input
+  const fragmentsSummary = input.relevantFragments
+    .slice(0, 6)
+    .map((f, i) => {
+      if (f.imageUrl) {
+        return `${i + 1}. [IMAGE] ID="${f.id}" Title="${f.title}" ImageURL="${f.imageUrl}"${f.uniqueInsight ? ` Insight: "${f.uniqueInsight}"` : ''}`;
+      }
+      return `${i + 1}. ID="${f.id}" Title="${f.title}" Summary="${f.summary}" Tags=[${f.tags?.join(', ') || 'none'}]${f.uniqueInsight ? ` Insight: "${f.uniqueInsight}"` : ''}`;
+    })
+    .join('\n');
+
+  const existingPiecesStr = input.existingPieces
+    .map(p => `"${p.text}"`)
+    .join(', ');
+
+  const anchorsStr = input.anchors
+    .map(a => `${a.type}: "${a.text}"`)
+    .join('; ');
+
+  const avoidPhrasesStr = input.avoidPhrases?.join(', ') || '';
+
+  const userContent = `Generate ${input.requestedCount + 2} puzzle pieces for the ${mode} quadrant.
+
+CENTRAL QUESTION: "${input.centralQuestion}"
+PROCESS AIM: "${input.processAim}"
+PUZZLE TYPE: ${input.puzzleType} - ${PUZZLE_TYPE_CONFIG[input.puzzleType].guidance}
+
+FRAGMENTS TO USE:
+${fragmentsSummary}
+
+${existingPiecesStr ? `EXISTING PIECES (do not repeat): ${existingPiecesStr}` : ''}
+${anchorsStr ? `ANCHORS: ${anchorsStr}` : ''}
+${input.preferenceHints ? `USER PREFERENCES: ${input.preferenceHints}` : ''}
+${avoidPhrasesStr ? `AVOID THESE PHRASES: ${avoidPhrasesStr}` : ''}
+
+Generate pieces as JSON with this exact structure:
+{
+  "pieces": [
+    {
+      "text": "2-5 word statement",
+      "priority": 1-6,
+      "fragment_id": "source fragment ID",
+      "fragment_title": "source fragment title",
+      "fragment_summary": "MANDATORY: explain why this insight comes from this fragment"
+    }
+  ]
+}
+
+RULES:
+- Each piece MUST be 2-5 words (count carefully!)
+- NO questions - only declarative statements
+- At least 60% must reference a fragment with reasoning
+- Each fragment_summary must explain the connection (min 20 chars)
+- Priority 1-2: core insights, 3-4: supporting, 5-6: subtle nuances`;
+
+  // Build context for prompt placeholders
+  const context = {
     central_question: input.centralQuestion,
     process_aim: input.processAim,
-    relevant_fragments: input.relevantFragments.map(f => ({
-      id: f.id,
-      title: f.title,
-      summary: f.summary,
-      tags: f.tags,
-      imageUrl: f.imageUrl
-    })),
-    existing_pieces: input.existingPieces,
-    anchors: input.anchors,
-    requested_count: input.requestedCount,
-    max_total_chars: input.maxTotalChars,
-    preference_hints: input.preferenceHints
+    puzzle_type: input.puzzleType,
+    fragments_summary: fragmentsSummary,
+    existing_pieces: existingPiecesStr
   };
 
-  const result = await runQuadrantAgent(legacyInput, client);
+  // Execute via Runner
+  console.log(`[QuadrantAgent:${mode}] Running ADK agent with ${input.relevantFragments.length} fragments`);
+  const result = await runner.run(userContent, client, context);
 
-  // Transform to ADK schema
-  return {
-    pieces: result.pieces.map(p => ({
-      text: p.text,
-      priority: p.priority as PiecePriority,
-      saturationLevel: p.saturation_level,
-      mode: input.mode,
-      fragmentId: p.fragment_id,
-      fragmentTitle: p.fragment_title,
-      fragmentSummary: p.fragment_summary || '',
-      imageUrl: p.image_url
-    })),
-    meta: {
-      mode: input.mode,
-      generatedCount: result.pieces.length,
-      filteredCount: result.pieces.length,
-      qualityScore: 70 // Default score for legacy path
+  if (!result.success) {
+    console.error(`[QuadrantAgent:${mode}] Agent failed:`, result.error);
+    return {
+      pieces: [],
+      meta: {
+        mode,
+        generatedCount: 0,
+        filteredCount: 0,
+        qualityScore: 0
+      }
+    };
+  }
+
+  // Get output from session (set by record_pieces tool) or from runner output
+  let output = session.state.get('quadrantOutput') as QuadrantAgentOutputSchema | undefined;
+
+  if (!output && result.output) {
+    // Parse pieces from raw output if record_pieces wasn't called
+    const rawPieces = result.output.pieces || [];
+    const validPieces = transformAndValidatePieces(rawPieces, input, mode);
+
+    output = {
+      pieces: validPieces,
+      meta: {
+        mode,
+        generatedCount: rawPieces.length,
+        filteredCount: validPieces.length,
+        qualityScore: calculateQualityScore(validPieces, input.relevantFragments.length)
+      }
+    };
+  }
+
+  if (!output) {
+    return {
+      pieces: [],
+      meta: {
+        mode,
+        generatedCount: 0,
+        filteredCount: 0,
+        qualityScore: 0
+      }
+    };
+  }
+
+  console.log(`[QuadrantAgent:${mode}] Generated ${output.pieces.length} pieces, quality=${output.meta.qualityScore}`);
+  return output;
+};
+
+/**
+ * Transform and validate pieces from LLM output
+ */
+const transformAndValidatePieces = (
+  rawPieces: any[],
+  input: QuadrantAgentInputSchema,
+  mode: DesignMode
+): PieceSchema[] => {
+  const validPieces: PieceSchema[] = [];
+
+  for (const p of rawPieces) {
+    // Validate word count
+    const text = (p.text || '').trim();
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount < 2 || wordCount > 5) {
+      console.log(`[QuadrantAgent:${mode}] Skipping "${text}" - ${wordCount} words`);
+      continue;
     }
-  };
+
+    // Reject questions
+    if (text.endsWith('?')) {
+      console.log(`[QuadrantAgent:${mode}] Skipping question: "${text}"`);
+      continue;
+    }
+
+    // Get fragment info
+    let fragmentId = p.fragment_id || p.fragmentId;
+    let fragmentTitle = p.fragment_title || p.fragmentTitle;
+    let fragmentSummary = p.fragment_summary || p.fragmentSummary || '';
+    let imageUrl = p.image_url || p.imageUrl;
+
+    // Backfill from input fragments if fragmentId present
+    if (fragmentId && input.relevantFragments) {
+      const srcFrag = input.relevantFragments.find(f => f.id === fragmentId);
+      if (srcFrag) {
+        if (!fragmentTitle) fragmentTitle = srcFrag.title;
+        if (!imageUrl && srcFrag.imageUrl) imageUrl = srcFrag.imageUrl;
+        if (!fragmentSummary || fragmentSummary.length < 20) {
+          fragmentSummary = `From "${fragmentTitle}": ${srcFrag.summary?.slice(0, 100) || srcFrag.uniqueInsight || 'Influenced this insight'}`;
+        }
+      }
+    }
+
+    // Generate fallback reasoning if missing
+    if (!fragmentSummary || fragmentSummary.length < 10) {
+      fragmentSummary = `This ${PUZZLE_TYPE_CONFIG[input.puzzleType].verb}s the ${mode.toLowerCase()} direction based on the design context`;
+    }
+
+    validPieces.push({
+      text,
+      priority: (p.priority || 3) as PiecePriority,
+      saturationLevel: priorityToSaturation(p.priority || 3),
+      mode,
+      fragmentId,
+      fragmentTitle,
+      fragmentSummary,
+      imageUrl,
+      qualityMeta: {
+        wordCount,
+        isQuestion: false,
+        hasFragmentGrounding: !!fragmentId,
+        isBlacklisted: false
+      }
+    });
+  }
+
+  return validPieces;
 };
