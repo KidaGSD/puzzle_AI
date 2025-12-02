@@ -60,6 +60,8 @@ export const PUZZLE_TYPE_CONFIG: Record<PuzzleType, { verb: string; guidance: st
 
 // ========== Instruction Builder ==========
 
+const GENERIC_PREFIXES = ['define', 'explore', 'clarify', 'focus', 'understand', 'set', 'outline'];
+
 const buildQuadrantInstruction = (mode: DesignMode): string => {
   const modeInfo = MODE_CONFIG[mode];
 
@@ -74,7 +76,9 @@ Key aspects: ${modeInfo.aspects.join(", ")}
 1. TITLE LENGTH: Every piece MUST be 2-5 words. Count before outputting.
 2. STATEMENTS ONLY: No questions. Each piece is an insight/answer, not a prompt.
 3. FRAGMENT GROUNDING: At least 60% of pieces must cite a fragment with reasoning.
-4. UNIQUE CONTENT: Do not repeat phrases from existing pieces or across quadrants.
+4. SPECIFICITY: Use the actual nouns/adjectives from the fragments (colors, materials, moods, objects, audience). Each piece should sound like "Matcha brass gradients" or "Bamboo steam ritual"—never generic verbs.
+5. FORBIDDEN WORDS: Do NOT output phrases starting with "Define", "Explore", "Clarify", "Focus", or "Understand".
+6. UNIQUE CONTENT: Do not repeat phrases from existing pieces or across quadrants.
 
 === FORMAT PATTERNS (structure, NOT content to copy) ===
 - 2 words: Adjective + Noun
@@ -390,12 +394,15 @@ export const runQuadrantAgentADK = async (
 
   // Build user content from input
   const fragmentsSummary = input.relevantFragments
-    .slice(0, 6)
+    .slice(0, 8)
     .map((f, i) => {
+      const keywords = f.keywords?.slice(0, 6).join(', ') || f.tags?.join(', ') || 'no keywords';
+      const themes = f.themes?.slice(0, 4).join(', ') || 'no themes';
+      const insight = f.uniqueInsight || f.summary;
       if (f.imageUrl) {
-        return `${i + 1}. [IMAGE] ID="${f.id}" Title="${f.title}" ImageURL="${f.imageUrl}"${f.uniqueInsight ? ` Insight: "${f.uniqueInsight}"` : ''}`;
+        return `${i + 1}. [IMAGE] "${f.title}" → Insight: ${insight}. Keywords: ${keywords}. Themes: ${themes}.`;
       }
-      return `${i + 1}. ID="${f.id}" Title="${f.title}" Summary="${f.summary}" Tags=[${f.tags?.join(', ') || 'none'}]${f.uniqueInsight ? ` Insight: "${f.uniqueInsight}"` : ''}`;
+      return `${i + 1}. "${f.title}" → Insight: ${insight}. Keywords: ${keywords}. Themes: ${themes}.`;
     })
     .join('\n');
 
@@ -422,6 +429,11 @@ ${existingPiecesStr ? `EXISTING PIECES (do not repeat): ${existingPiecesStr}` : 
 ${anchorsStr ? `ANCHORS: ${anchorsStr}` : ''}
 ${input.preferenceHints ? `USER PREFERENCES: ${input.preferenceHints}` : ''}
 ${avoidPhrasesStr ? `AVOID THESE PHRASES: ${avoidPhrasesStr}` : ''}
+
+MANDATORY CONTENT RULES:
+- Every piece must reference a distinctive element from the fragments (color, material, mood, object, audience, motion quality, etc.).
+- Use concrete nouns/adjectives: e.g., "matcha brass gradients", "bamboo steam ritual", "stone cold calm".
+- NEVER start with verbs like "Define", "Explore", "Clarify", "Focus", "Understand".
 
 Generate pieces as JSON with this exact structure:
 {
@@ -526,6 +538,12 @@ const transformAndValidatePieces = (
     // Reject questions
     if (text.endsWith('?')) {
       console.log(`[QuadrantAgent:${mode}] Skipping question: "${text}"`);
+      continue;
+    }
+
+     // Reject generic prefixes
+    if (GENERIC_PREFIXES.some(prefix => text.toLowerCase().startsWith(prefix))) {
+      console.log(`[QuadrantAgent:${mode}] Skipping generic phrase: "${text}"`);
       continue;
     }
 

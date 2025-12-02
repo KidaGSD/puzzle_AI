@@ -104,6 +104,8 @@ export interface QuadrantAgentInputSchema {
     id: string;
     title: string;
     summary: string;
+    keywords?: string[];
+    themes?: string[];
     tags?: string[];
     imageUrl?: string;
     uniqueInsight?: string;

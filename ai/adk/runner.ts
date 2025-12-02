@@ -24,12 +24,14 @@ import {
   SynthesisOutputSchema,
   FragmentFeatureSchema
 } from "./schemas/puzzleSchemas";
-import { runQuadrantAgentADK, MODE_CONFIG } from "./agents/quadrantAgent";
+import { runQuadrantManager, EnrichedFragment } from "./agents/quadrantManagerAgent";
 import { runCentralQuestionAgent } from "./agents/centralQuestionAgent";
 import { applyDiversityFilter } from "./agents/filterAgent";
+import { MODE_CONFIG } from "./agents/quadrantAgent";
 import { getFragmentFeatures } from "./tools/featureStoreTool";
 import { getFragmentsForMode } from "./tools/retrievalTool";
-import { enqueuePieces, getPoolStats } from "./tools/preGenPoolTool";
+import { enqueuePieces, clearPool, getPoolStats } from "./tools/preGenPoolTool";
+import { readPreferenceHints } from "./tools/preferenceTool";
 import { LLMClient } from "../adkClient";
 import { v4 as uuidv4 } from "uuid";
 
@@ -136,8 +138,10 @@ export const startPuzzleSession = async (
   const session = createPuzzleSession('user', input.processAim, input.puzzleType, '');
   session.state.set('fragments', input.fragments);
   session.state.set('llmClient', client);
+  session.state.set('preferenceProfile', input.preferenceProfile);
 
   const toolContext = createToolContext(session);
+  await clearPool({}, toolContext);
 
   // ========== Step 1: Extract features from fragments ==========
   console.log('[PuzzleRunner] Step 1: Extracting features...');
@@ -178,60 +182,67 @@ export const startPuzzleSession = async (
   }
   session.state.set('centralQuestion', centralQuestion);
 
-  // ========== Step 3: Get mode-specific fragments via retrieval ==========
-  console.log('[PuzzleRunner] Step 3: Retrieving mode-specific fragments...');
-  const usedFragmentCounts = session.state.get('preGenPool_fragmentCounts', {}) as Record<string, number>;
-  const modeFragments: Record<DesignMode, Fragment[]> = {
-    FORM: [],
-    MOTION: [],
-    EXPRESSION: [],
-    FUNCTION: []
+  // ========== Step 3: Enrich fragments with features ==========
+  console.log('[PuzzleRunner] Step 3: Enriching fragments...');
+  const modes: DesignMode[] = ['FORM', 'MOTION', 'EXPRESSION', 'FUNCTION'];
+
+  // Build enriched fragments for the QuadrantManager
+  const enrichedFragments: EnrichedFragment[] = input.fragments.map(f => {
+    const features = fragmentFeatures.find(ft => ft.fragmentId === f.id);
+    const combinedTags = new Set<string>();
+    (f.tags || []).forEach(t => combinedTags.add(t));
+    features?.keywords?.forEach(k => combinedTags.add(k));
+    features?.themes?.forEach(t => combinedTags.add(t));
+
+    return {
+      id: f.id,
+      title: f.title || f.summary?.slice(0, 30) || 'Untitled',
+      summary: features?.uniqueInsight || f.summary || f.content?.slice(0, 120) || 'No summary',
+      content: f.content,
+      type: (f.type === 'IMAGE' ? 'IMAGE' : 'TEXT') as 'TEXT' | 'IMAGE',
+      tags: Array.from(combinedTags),
+      keywords: features?.keywords,
+      themes: features?.themes,
+      palette: features?.palette,
+      objects: features?.objects,
+      mood: features?.mood,
+      uniqueInsight: features?.uniqueInsight,
+      imageUrl: f.type === 'IMAGE' ? f.content : undefined
+    };
+  });
+
+  // Get preference hints per mode
+  const preferenceHintsByMode: Record<DesignMode, string> = {
+    FORM: '',
+    MOTION: '',
+    EXPRESSION: '',
+    FUNCTION: ''
   };
 
-  const modes: DesignMode[] = ['FORM', 'MOTION', 'EXPRESSION', 'FUNCTION'];
   for (const mode of modes) {
     try {
-      const retrievalResult = await getFragmentsForMode({
-        mode,
-        processAim: input.processAim,
-        centralQuestion,
-        limit: 6,
-        usedFragmentCounts
-      }, toolContext);
-
-      if (retrievalResult.success && retrievalResult.data) {
-        // Get full fragment objects from IDs
-        const selectedIds = retrievalResult.data.global.map(s => s.fragmentId);
-        modeFragments[mode] = input.fragments.filter(f => selectedIds.includes(f.id));
-        console.log(`[PuzzleRunner] ${mode}: ${modeFragments[mode].length} fragments selected`);
-      } else {
-        // Fallback to legacy selection
-        modeFragments[mode] = selectFragmentsForMode(input.fragments, mode, 6);
-      }
-    } catch (err) {
-      console.warn(`[PuzzleRunner] Retrieval failed for ${mode}, using fallback:`, err);
-      modeFragments[mode] = selectFragmentsForMode(input.fragments, mode, 6);
+      const hint = await readPreferenceHints({ mode, puzzleType: input.puzzleType }, toolContext);
+      preferenceHintsByMode[mode] = hint.hints || '';
+    } catch {
+      preferenceHintsByMode[mode] = '';
     }
   }
 
-  // ========== Step 4: Run quadrant agents in parallel ==========
-  console.log('[PuzzleRunner] Step 4: Running quadrant agents...');
-  const quadrantResults = await Promise.allSettled(
-    modes.map(mode => runQuadrantForSession(
-      mode,
-      input.puzzleType,
-      centralQuestion!,
-      input.processAim,
-      modeFragments[mode], // Use retrieval-selected fragments
-      input.anchors,
-      input.preferenceProfile,
-      fragmentFeatures,
-      client
-    ))
-  );
+  // ========== Step 4: Run QuadrantManager (1 Manager + 4 Agents) ==========
+  console.log('[PuzzleRunner] Step 4: Running QuadrantManager (1 manager + 4 agents)...');
 
-  // ========== Step 5 & 6: Filter and enqueue to pool ==========
-  console.log('[PuzzleRunner] Step 5-6: Filtering and enqueueing...');
+  const managerResult = await runQuadrantManager({
+    processAim: input.processAim,
+    puzzleType: input.puzzleType,
+    centralQuestion: centralQuestion!,
+    fragments: enrichedFragments,
+    anchors: input.anchors,
+    preferenceHints: preferenceHintsByMode,
+    avoidPhrases: []
+  }, client);
+
+  // ========== Step 5 & 6: Apply final filter and enqueue to pool ==========
+  console.log('[PuzzleRunner] Step 5-6: Final filtering and enqueueing...');
   const preGenPieces: Record<DesignMode, PieceSchema[]> = {
     FORM: [],
     MOTION: [],
@@ -239,35 +250,34 @@ export const startPuzzleSession = async (
     FUNCTION: []
   };
 
-  let totalQuality = 0;
+  const totalQuality = managerResult.meta.qualityScore;
   let successCount = 0;
 
-  for (let i = 0; i < modes.length; i++) {
-    const mode = modes[i];
-    const result = quadrantResults[i];
-
-    if (result.status === 'fulfilled') {
-      preGenPieces[mode] = result.value.pieces;
-      totalQuality += result.value.meta.qualityScore;
+  for (const mode of modes) {
+    const modePieces = managerResult.pieces[mode];
+    if (modePieces && modePieces.length > 0) {
+      // Apply final diversity filter per mode
+      const filtered = applyDiversityFilter(modePieces, [], []);
+      preGenPieces[mode] = filtered.pieces;
       successCount++;
 
       // Enqueue to preGen pool with usage tracking
-      await enqueuePieces({ mode, pieces: result.value.pieces }, toolContext);
+      await enqueuePieces({ mode, pieces: filtered.pieces }, toolContext);
 
-      console.log(`[PuzzleRunner] ${mode}: ${result.value.pieces.length} pieces, quality=${result.value.meta.qualityScore}`);
+      console.log(`[PuzzleRunner] ${mode}: ${filtered.pieces.length} pieces`);
     } else {
-      errors.push(`${mode} generation failed: ${result.reason}`);
-      console.error(`[PuzzleRunner] ${mode} failed:`, result.reason);
+      console.warn(`[PuzzleRunner] ${mode}: No pieces generated`);
     }
   }
 
-  // Log pool stats
+  // Log pool stats and manager meta
   const poolStats = await getPoolStats({}, toolContext);
   if (poolStats.success) {
     console.log(`[PuzzleRunner] Pool stats: ${JSON.stringify(poolStats.stats.perMode)}`);
   }
+  console.log(`[PuzzleRunner] Manager meta: total=${managerResult.meta.totalPieces}, coverage=${(managerResult.meta.fragmentCoverage * 100).toFixed(0)}%, duplicates=${managerResult.meta.crossQuadrantDuplicates}`);
 
-  const avgQuality = successCount > 0 ? Math.round(totalQuality / successCount) : 0;
+  const avgQuality = totalQuality;
   const duration = Date.now() - startTime;
 
   console.log(`[PuzzleRunner] Session complete in ${duration}ms, avg quality=${avgQuality}`);
@@ -295,7 +305,7 @@ const runQuadrantForSession = async (
   processAim: string,
   fragments: Fragment[], // Pre-selected by retrieval tool
   anchors: Anchor[],
-  preferenceProfile: UserPreferenceProfile,
+  preferenceHint: string,
   fragmentFeatures: FragmentFeatureSchema[], // Features from extraction
   client: LLMClient
 ): Promise<QuadrantAgentOutputSchema> => {
@@ -303,11 +313,23 @@ const runQuadrantForSession = async (
   // Enrich with features if available
   const enrichedFragments = fragments.map(f => {
     const features = fragmentFeatures.find(ft => ft.fragmentId === f.id);
+    const combinedTags = new Set<string>();
+    (f.tags || []).forEach(t => combinedTags.add(t));
+    features?.keywords?.forEach(k => combinedTags.add(k));
+    features?.themes?.forEach(t => combinedTags.add(t));
+    const summaryText =
+      features?.uniqueInsight ||
+      f.summary ||
+      f.content?.slice(0, 120) ||
+      'No summary available';
+
     return {
       id: f.id,
       title: f.title || f.summary?.slice(0, 30) || 'Untitled',
-      summary: f.summary || f.content?.slice(0, 100) || '',
-      tags: f.tags,
+      summary: summaryText,
+      keywords: features?.keywords,
+      themes: features?.themes,
+      tags: Array.from(combinedTags),
       imageUrl: f.type === 'IMAGE' ? f.content : undefined,
       uniqueInsight: features?.uniqueInsight || undefined
     };
@@ -324,7 +346,7 @@ const runQuadrantForSession = async (
     anchors: anchors.map(a => ({ type: a.type as 'STARTING' | 'SOLUTION', text: a.text })),
     requestedCount: 6, // Over-generate, then filter
     maxTotalChars: 200,
-    preferenceHints: buildPreferenceHint(preferenceProfile, puzzleType, mode)
+    preferenceHints: preferenceHint
   };
 
   // Generate pieces via real ADK agent
@@ -399,7 +421,7 @@ const selectFragmentsForMode = (
 /**
  * Build preference hint from profile
  */
-const buildPreferenceHint = (
+const buildPreferenceHintFromProfile = (
   profile: UserPreferenceProfile,
   puzzleType: PuzzleType,
   mode: DesignMode
@@ -463,7 +485,7 @@ export const regenerateQuadrant = async (
     anchors: anchors.map(a => ({ type: a.type as 'STARTING' | 'SOLUTION', text: a.text })),
     requestedCount: 4,
     maxTotalChars: 200,
-    preferenceHints: buildPreferenceHint(preferenceProfile, sessionState.puzzle_type, mode),
+    preferenceHints: buildPreferenceHintFromProfile(preferenceProfile, sessionState.puzzle_type, mode),
     avoidPhrases
   };
 
