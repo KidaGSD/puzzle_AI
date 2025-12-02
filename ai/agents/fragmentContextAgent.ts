@@ -23,17 +23,53 @@ export interface FragmentContextOutput {
   clusters?: Cluster[];
 }
 
+/**
+ * Validate that a tag is meaningful (not a file extension, path segment, or hash)
+ */
+const isValidTag = (tag: string): boolean => {
+  // Reject common file extensions
+  if (/^(png|jpg|jpeg|gif|webp|pdf|svg|ico|bmp|tiff?)$/i.test(tag)) return false;
+  // Reject path-like strings
+  if (tag.includes('/') || tag.includes('\\')) return false;
+  // Reject pure numbers or hex hashes (32+ chars or pure numbers)
+  if (/^[0-9]+$/.test(tag)) return false;
+  if (/^[0-9a-f]+$/i.test(tag) && tag.length >= 6) return false;
+  // Reject very short tags (less than 2 chars)
+  if (tag.length < 2) return false;
+  // Reject common path segments
+  if (/^(mockupfragments|fragments|images|assets|uploads)$/i.test(tag)) return false;
+  // Reject URLs
+  if (tag.includes('http') || tag.includes('www')) return false;
+  return true;
+};
+
 const fallbackSummarize = (f: Fragment) => {
   const text = f.content || "";
-  const summary = text.length > 80 ? `${text.slice(0, 77)}...` : text || "Untitled fragment";
+
+  // Don't use file path content for text generation
+  const isFilePath = text.startsWith('/') || text.includes('.png') || text.includes('.jpg');
+  const textContent = isFilePath ? "" : text;
+
+  const summary = textContent.length > 80
+    ? `${textContent.slice(0, 77)}...`
+    : textContent || (f.type === 'IMAGE' ? "Visual reference image" : "Untitled fragment");
+
   // Generate a short title from first few words
-  const words = text.trim().split(/\s+/).slice(0, 4);
-  const title = words.length > 0 ? words.join(" ") : "Untitled";
-  const tags = text
+  const words = textContent.trim().split(/\s+/).slice(0, 4);
+  const title = words.length > 0 && words[0]
+    ? words.join(" ")
+    : (f.type === 'IMAGE' ? "Image Reference" : "Untitled");
+
+  // Generate tags with validation
+  const rawTags = textContent
     .toLowerCase()
     .split(/\W+/)
     .filter(Boolean)
-    .slice(0, 3);
+    .filter(w => w.length > 3) // Minimum word length
+    .filter(isValidTag); // Apply validation
+
+  const tags = rawTags.slice(0, 3);
+
   return { title, summary, tags: tags.length ? tags : ["idea"] };
 };
 
@@ -71,7 +107,17 @@ export const runFragmentContextAgent = async (
     const cleaned = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
     if (!parsed.fragments) throw new Error("missing fragments");
-    return parsed;
+
+    // Validate and filter tags from AI response
+    const validatedFragments = parsed.fragments.map((f: { id: string; title: string; summary: string; tags: string[] }) => ({
+      ...f,
+      tags: (f.tags || []).filter(isValidTag).slice(0, 4), // Filter invalid tags
+    }));
+
+    return {
+      ...parsed,
+      fragments: validatedFragments,
+    };
   } catch (err) {
     // Fallback heuristic on local fragments
     return {

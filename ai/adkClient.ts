@@ -1,27 +1,93 @@
 import { GoogleGenAI } from "@google/genai";
 
+/**
+ * Image input for multimodal generation
+ */
+export interface ImageInput {
+  /** Image URL (will be fetched and converted to base64) */
+  url?: string;
+  /** Base64 encoded image data (alternative to URL) */
+  base64Data?: string;
+  /** MIME type (image/png, image/jpeg, image/webp, image/heic, image/heif) */
+  mimeType: string;
+}
+
+/**
+ * LLM Client interface with text and multimodal support
+ */
 export interface LLMClient {
+  /** Generate text response from text prompt */
   generate(prompt: string, temperature?: number): Promise<string>;
+  /** Generate text response from text + images (VLM) */
+  generateWithImages(
+    prompt: string,
+    images: ImageInput[],
+    temperature?: number
+  ): Promise<string>;
+  /** Whether this is a mock client (no API key) */
   readonly isMock: boolean;
+  /** The model being used */
+  readonly model: string;
 }
 
 // Vite/browser-safe env resolution
 const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || {};
-// Use Gemini 2.5 Pro for better reasoning, or 3.0 preview via env override
+
+/**
+ * Gemini 3 Pro Preview - 1M context window, advanced reasoning, full multimodal
+ * See: https://ai.google.dev/gemini-api/docs/gemini-3
+ *
+ * Model options:
+ * - gemini-3-pro-preview: 1M input / 64k output, best for complex reasoning
+ * - gemini-3-pro-image-preview: 65k input, can generate images
+ * - gemini-2.5-pro: Previous generation, still good for most tasks
+ */
 const defaultModel =
   env.VITE_GEMINI_MODEL ||
   env.GEMINI_MODEL ||
   (typeof process !== "undefined" ? process.env.GEMINI_MODEL : "") ||
-  "gemini-2.5-pro";  // Upgraded from gemini-2.0-flash for better quality
+  "gemini-3-pro-preview";  // Upgraded to Gemini 3 for better reasoning + VLM
+
 const apiKey =
   env.VITE_GEMINI_API_KEY ||
   env.GEMINI_API_KEY ||
   (typeof process !== "undefined" ? process.env.GEMINI_API_KEY || process.env.API_KEY : "");
 
+/**
+ * Default temperature for Gemini 3
+ * Note: Gemini 3 docs recommend keeping temperature at 1.0 for best results
+ * Lowering may cause unexpected behavior on complex reasoning tasks
+ */
+const DEFAULT_TEMPERATURE = 1.0;
+
 const cleanText = (text?: string | null) => (text || "").trim();
+
+/**
+ * Fetch image from URL and convert to base64
+ */
+async function fetchImageAsBase64(url: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    // Browser-compatible base64 encoding
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  } catch (error) {
+    console.error(`[adkClient] Failed to fetch image from ${url}:`, error);
+    throw error;
+  }
+}
 
 const makeMockClient = (): LLMClient => ({
   isMock: true,
+  model: "mock",
   async generate(prompt: string) {
     // Lightweight mock: echo a JSON-ish hint for agent parsers.
     if (prompt.includes("Fragment & Context Agent")) {
@@ -62,21 +128,118 @@ const makeMockClient = (): LLMClient => ({
     }
     return "{}";
   },
+  async generateWithImages(prompt: string, images: ImageInput[]) {
+    // Mock VLM: return a description based on image count
+    const imageCount = images.length;
+    if (imageCount === 0) {
+      return this.generate(prompt);
+    }
+    return JSON.stringify({
+      description: `Mock description for ${imageCount} image(s)`,
+      elements: ["mock element 1", "mock element 2"],
+      mood: "neutral",
+      colors: ["gray", "white"],
+    });
+  },
 });
 
 export const createLLMClient = (): LLMClient => {
-  if (!apiKey) return makeMockClient();
+  if (!apiKey) {
+    console.warn('[adkClient] No API key found, using mock client');
+    return makeMockClient();
+  }
+
+  console.log(`[adkClient] Initializing with model: ${defaultModel}`);
   const genAI = new GoogleGenAI({ apiKey });
+
   return {
     isMock: false,
-    async generate(prompt: string, temperature = 0.6) {
+    model: defaultModel,
+
+    /**
+     * Generate text response from text-only prompt
+     */
+    async generate(prompt: string, temperature = DEFAULT_TEMPERATURE) {
       const res = await genAI.models.generateContent({
         model: defaultModel,
         contents: prompt,
         config: {
           temperature,
+          // Gemini 3 thinking level: 'low' for faster/cheaper, 'high' for more reasoning
+          // thinkingConfig: { thinkingLevel: 'high' },
         },
       });
+      return cleanText(res.text);
+    },
+
+    /**
+     * Generate text response from text + images (Vision Language Model)
+     * This enables actual image analysis, not just URL references
+     *
+     * @param prompt - Text prompt describing what to analyze
+     * @param images - Array of images to analyze
+     * @param temperature - Generation temperature (default 1.0 for Gemini 3)
+     */
+    async generateWithImages(
+      prompt: string,
+      images: ImageInput[],
+      temperature = DEFAULT_TEMPERATURE
+    ): Promise<string> {
+      if (images.length === 0) {
+        // No images, fall back to text-only
+        return this.generate(prompt, temperature);
+      }
+
+      // Build multimodal content parts
+      const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+      // Add text prompt first
+      parts.push({ text: prompt });
+
+      // Add each image
+      for (const img of images) {
+        let base64Data: string;
+
+        if (img.base64Data) {
+          // Already have base64 data
+          base64Data = img.base64Data;
+        } else if (img.url) {
+          // Fetch from URL and convert to base64
+          try {
+            base64Data = await fetchImageAsBase64(img.url);
+          } catch (error) {
+            console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+            continue;
+          }
+        } else {
+          console.warn('[adkClient] Image input missing both url and base64Data, skipping');
+          continue;
+        }
+
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType,
+            data: base64Data,
+          },
+        });
+      }
+
+      // If all images failed, fall back to text-only
+      if (parts.length === 1) {
+        console.warn('[adkClient] All images failed to load, falling back to text-only');
+        return this.generate(prompt, temperature);
+      }
+
+      console.log(`[adkClient] Generating with ${parts.length - 1} image(s)`);
+
+      const res = await genAI.models.generateContent({
+        model: defaultModel,
+        contents: parts,
+        config: {
+          temperature,
+        },
+      });
+
       return cleanText(res.text);
     },
   };

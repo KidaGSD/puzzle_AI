@@ -251,17 +251,28 @@ Return ONLY valid JSON:
   ]
 }
 
-CRITICAL - FRAGMENT CITATION REQUIREMENTS:
-1. saturation_level: "high" for priority 1-2, "medium" for 3-4, "low" for 5-6
-2. YOU MUST cite source fragments - this is MANDATORY when fragments are provided:
-   - fragment_id: Copy the EXACT ID from the fragments list above (e.g., "frag-123")
-   - fragment_title: Copy the EXACT title from the fragments list
-   - fragment_summary: 1 sentence explaining HOW this fragment influenced your insight
-3. For IMAGE fragments, ALSO include image_url with the URL from the fragment
-4. AT LEAST 60% of your pieces MUST cite a fragment (when fragments are provided)
-5. Only omit fragment fields if your insight is purely original (not influenced by any fragment)
+═══════════════════════════════════════════════════════════════════════════════
+⚠️ CRITICAL - REASONING REQUIREMENTS (MANDATORY FOR EVERY PIECE):
+═══════════════════════════════════════════════════════════════════════════════
 
-EXAMPLE with fragment citation (REQUIRED):
+RULE: EVERY piece MUST have a "fragment_summary" field with your reasoning.
+This is MANDATORY even if no fragment influenced the piece.
+
+1. saturation_level: "high" for priority 1-2, "medium" for 3-4, "low" for 5-6
+
+2. IF a fragment influenced this insight:
+   - fragment_id: Copy the EXACT ID from the fragments list above
+   - fragment_title: Copy the EXACT title from the fragments list
+   - fragment_summary: REQUIRED - "The [specific element] in this fragment suggests [your reasoning]"
+   - image_url: If IMAGE fragment, include the URL
+
+3. IF no fragment influenced this insight:
+   - fragment_summary: REQUIRED - "Based on the ${input.puzzle_type} goal, this explores [your reasoning]"
+   - Do NOT include fragment_id or fragment_title
+
+4. AT LEAST 60% of pieces should cite a fragment (when fragments are provided)
+
+EXAMPLE WITH FRAGMENT (shows fragment_id, fragment_title, AND fragment_summary):
 {
   "text": "Warm analog textures",
   "priority": 2,
@@ -271,12 +282,52 @@ EXAMPLE with fragment citation (REQUIRED):
   "fragment_summary": "The earthy browns and greens in this mood board suggest natural warmth"
 }
 
-EXAMPLE without citation (only if no relevant fragment):
+EXAMPLE WITHOUT FRAGMENT (still has fragment_summary with reasoning!):
 {
   "text": "Clean minimalist lines",
   "priority": 4,
-  "saturation_level": "medium"
-}`;
+  "saturation_level": "medium",
+  "fragment_summary": "Based on the ${input.puzzle_type} goal, this explores contrast to existing organic themes"
+}
+
+⚠️ PIECES WITHOUT fragment_summary WILL BE REJECTED`;
+};
+
+// ========== Fallback Reasoning Generator ==========
+
+/**
+ * Generate fallback reasoning for pieces that don't have fragment_summary
+ */
+const generateFallbackReasoning = (
+  puzzleType: PuzzleType,
+  mode: DesignMode,
+  pieceText: string,
+  fragments: Array<{ id: string; title: string; summary?: string }>,
+  fragmentId?: string
+): string => {
+  // If piece has fragment reference, look it up and generate reasoning
+  if (fragmentId) {
+    const frag = fragments.find(f => f.id === fragmentId);
+    if (frag) {
+      return `Inspired by "${frag.title}" - this fragment's content suggested this ${mode.toLowerCase()} direction`;
+    }
+  }
+
+  // Generate reasoning based on puzzle type
+  const typeVerb: Record<PuzzleType, string> = {
+    CLARIFY: 'clarifies',
+    EXPAND: 'explores new angles for',
+    REFINE: 'helps narrow down',
+  };
+
+  const modeAspect: Record<DesignMode, string> = {
+    FORM: 'visual structure',
+    MOTION: 'movement and timing',
+    EXPRESSION: 'emotional tone',
+    FUNCTION: 'practical application',
+  };
+
+  return `This ${typeVerb[puzzleType]} the ${modeAspect[mode]} by suggesting "${pieceText}" as a direction`;
 };
 
 // ========== Title Length Validation ==========
@@ -323,16 +374,38 @@ export const runQuadrantAgent = async (
     const cleaned = raw.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned) as QuadrantAgentOutput;
 
-    // Validate and fix saturation levels + title length
+    // Validate and fix saturation levels + title length + ensure reasoning exists
     const pieces = parsed.pieces.map((p) => {
       // Enforce 2-5 word title length
       let title = truncateTitle(p.text, 5);
       title = padTitle(title, input.mode);
 
+      // CRITICAL: Ensure every piece has reasoning (fragment_summary)
+      // Accept both snake_case (AI output) and camelCase (interface)
+      let fragmentSummary = p.fragment_summary || (p as any).fragmentSummary;
+      const fragmentId = p.fragment_id || (p as any).fragmentId;
+      const fragmentTitle = p.fragment_title || (p as any).fragmentTitle;
+
+      if (!fragmentSummary) {
+        // Generate fallback reasoning based on context
+        fragmentSummary = generateFallbackReasoning(
+          input.puzzle_type,
+          input.mode,
+          title,
+          input.relevant_fragments,
+          fragmentId
+        );
+        console.log(`[QuadrantAgent] Generated fallback reasoning for "${title}"`);
+      }
+
       return {
         ...p,
         text: title,
         saturation_level: priorityToSaturation(p.priority as PiecePriority),
+        // Normalize to snake_case for consistency
+        fragment_id: fragmentId,
+        fragment_title: fragmentTitle,
+        fragment_summary: fragmentSummary,
       };
     });
 
@@ -355,9 +428,22 @@ export const runQuadrantAgent = async (
 
 const getFallbackOutput = (input: QuadrantAgentInput): QuadrantAgentOutput => {
   const examples = MODE_STATEMENT_EXAMPLES[input.puzzle_type][input.mode];
+  const text1 = examples[0] || "Core insight";
+  const text2 = examples[1] || "Supporting detail";
+
   const fallbackPieces: QuadrantAgentPiece[] = [
-    { text: examples[0] || "Core insight", priority: 2, saturation_level: "high" },
-    { text: examples[1] || "Supporting detail", priority: 4, saturation_level: "medium" },
+    {
+      text: text1,
+      priority: 2,
+      saturation_level: "high",
+      fragment_summary: generateFallbackReasoning(input.puzzle_type, input.mode, text1, input.relevant_fragments),
+    },
+    {
+      text: text2,
+      priority: 4,
+      saturation_level: "medium",
+      fragment_summary: generateFallbackReasoning(input.puzzle_type, input.mode, text2, input.relevant_fragments),
+    },
   ];
   return { pieces: fallbackPieces };
 };

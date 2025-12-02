@@ -87,17 +87,29 @@ PUZZLE TYPE SELECTION:
 - EXPAND: When exploration is thin or needs new angles
 - REFINE: When there are many ideas but need to converge
 
-CRITICAL - RATIONALE REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════════
+⚠️ CRITICAL - FRAGMENT REFERENCE RULES (READ CAREFULLY):
+═══════════════════════════════════════════════════════════════════════════════
+
+1. ALWAYS refer to fragments by their TITLE in quotes, e.g., "Your 'Matcha Brand Colors' fragment..."
+2. NEVER use fragment IDs (UUIDs like "c2624ed35c1a466cc0488e11f917be7") in your response
+3. If a fragment has no title, describe it by its content type: "Your image fragment showing..."
+4. Your rationale MUST mention specific fragment TITLES, not IDs
+
+RATIONALE REQUIREMENTS:
 Your rationale MUST:
-1. Reference SPECIFIC fragments by name (e.g., "Your 'Brand Colors' fragment...")
+1. Reference SPECIFIC fragments by TITLE (e.g., "Your 'Brand Colors' fragment...")
 2. Explain WHY this puzzle type fits the current situation
 3. Be actionable and insightful, not generic
 
-Example good rationale:
+Example GOOD rationale:
 "Your 'Matcha Brand Colors' and 'Analog Warmth Reference' fragments both emphasize earthy, natural tones. A CLARIFY puzzle would help define exactly what 'warm' means for this project."
 
-Example bad rationale (DON'T DO THIS):
+Example BAD rationale (DON'T DO THIS):
 "Starting with clarification to establish foundations." (Too generic!)
+
+Example WRONG rationale (NEVER DO THIS - uses ID):
+"Based on fragment c2624ed35c1a466cc0488e11f917be7..." (Uses ID instead of title!)
 
 If no obvious gap or need, return: { "shouldSuggest": false }
 

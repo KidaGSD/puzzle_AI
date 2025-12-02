@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
-import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X, Maximize2 } from 'lucide-react';
+import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X, Maximize2, Sparkles } from 'lucide-react';
 import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
@@ -34,6 +34,7 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [localTitle, setLocalTitle] = useState(data.title || '');
   const [showImageModal, setShowImageModal] = useState(false);
+  const [showAISummary, setShowAISummary] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -189,6 +190,24 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
             </button>
           )}
 
+          {/* AI Summary button - shows AI-generated summary on click */}
+          {summary && !summary.startsWith('/') && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAISummary(!showAISummary);
+              }}
+              className={`p-1 transition-opacity shrink-0 ${
+                showAISummary
+                  ? 'text-purple-500'
+                  : 'text-gray-300 hover:text-purple-400 opacity-0 group-hover:opacity-100'
+              }`}
+              title={showAISummary ? "Hide AI summary" : "Show AI summary"}
+            >
+              <Sparkles size={12} />
+            </button>
+          )}
+
           <GripVertical size={14} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
 
           <button
@@ -201,6 +220,19 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
           >
             <Trash2 size={14} />
           </button>
+        </div>
+      )}
+
+      {/* AI Summary Popup - shown when Sparkles button is clicked */}
+      {showAISummary && summary && !summary.startsWith('/') && (
+        <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 text-[11px] text-purple-700">
+          <div className="flex items-start gap-2">
+            <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-purple-400" />
+            <div>
+              <span className="font-medium text-purple-500">AI Summary: </span>
+              {summary}
+            </div>
+          </div>
         </div>
       )}
 
@@ -263,21 +295,47 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
           />
         )}
 
-        {/* Summary & Tags */}
-        {(summary || (tags && tags.length)) && !isFrame && (
-          <div className="mt-2 text-[12px] text-gray-500 space-y-1">
-            {summary && <div className="leading-snug">Summary: {summary}</div>}
-            {tags && tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {tags.slice(0, 4).map(tag => (
-                  <span key={tag} className="px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-semibold text-gray-600">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Summary & Tags - Filter out file paths and invalid tags */}
+        {(() => {
+          // Filter out file paths from summary
+          const isFilePath = (s: string) =>
+            s?.startsWith('/') ||
+            s?.includes('.png') ||
+            s?.includes('.jpg') ||
+            s?.includes('.webp') ||
+            s?.includes('/MockupFragments/');
+
+          // Filter out invalid tags (file extensions, numbers, hashes)
+          const isValidTag = (tag: string) => {
+            if (/^(png|jpg|jpeg|gif|webp|pdf|svg)$/i.test(tag)) return false;
+            if (/^[0-9]+$/.test(tag)) return false;
+            if (/^[0-9a-f]+$/i.test(tag) && tag.length >= 6) return false;
+            if (/^(mockupfragments|fragments|images)$/i.test(tag)) return false;
+            if (tag.length < 2) return false;
+            return true;
+          };
+
+          const displaySummary = summary && !isFilePath(summary) ? summary : null;
+          const validTags = (tags || []).filter(isValidTag);
+
+          if (!displaySummary && validTags.length === 0) return null;
+          if (isFrame) return null;
+
+          return (
+            <div className="mt-2 text-[12px] text-gray-500 space-y-1">
+              {displaySummary && <div className="leading-snug">Summary: {displaySummary}</div>}
+              {validTags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {validTags.slice(0, 4).map(tag => (
+                    <span key={tag} className="px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-semibold text-gray-600">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Puzzle Labels - colored by puzzle type */}
         {!isFrame && (() => {

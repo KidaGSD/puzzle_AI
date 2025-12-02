@@ -8,6 +8,7 @@ import { HomeCanvasView } from './views/HomeCanvasView';
 import { PuzzleSessionView } from './views/PuzzleSessionView';
 import { LoadingTransition } from './components/common/LoadingTransition';
 import { PuzzleSummaryPopup } from './components/puzzle/PuzzleSummaryPopup';
+import { AIFeedback } from './components/common/AIFeedback';
 import { contextStore, eventBus, ensureOrchestrator, getPuzzleSyncInstance } from './store/runtime';
 import { PuzzleSummary, PuzzleType } from './domain/models';
 
@@ -197,6 +198,9 @@ export default function App() {
           onClose={handleCloseSummaryPopup}
         />
       )}
+
+      {/* AI Loading/Error Feedback Toast */}
+      <AIFeedback />
     </>
   );
 }

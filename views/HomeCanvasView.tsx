@@ -13,11 +13,13 @@ import { Fragment } from '../components/Fragment';
 import { ToolType, FragmentType, FragmentData, Lever, Puzzle, PALETTE, PuzzleSessionType } from '../types';
 import { contextStore, eventBus, setMascotProposalListener } from '../store/runtime';
 import { Fragment as DomainFragment, PuzzleSummary } from '../domain/models';
-import { SummaryCard } from '../components/SummaryCard';
+// Unused: SummaryCard auto-display removed. Keep import for potential "Add to Canvas" feature.
+// import { SummaryCard } from '../components/SummaryCard';
 import { MascotButton } from '../components/mascot/MascotButton';
 import { MascotPanel } from '../components/mascot/MascotPanel';
 import { MascotProposal } from '../ai/agents/mascotAgent';
 import { WelcomeOverlay } from '../components/onboarding/WelcomeOverlay';
+import { ZoomControls } from '../components/canvas/ZoomControls';
 
 // --- MOCK DATA ---
 // Levers (strategic directions) - kept for fragment organization
@@ -630,14 +632,12 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
         onSelectPuzzle={handleSelectPuzzle}
       />
 
-      {/* Puzzle Summary Cards */}
-      {puzzleSummaries.length > 0 && (
-        <div className="absolute left-6 bottom-32 z-30 flex flex-col gap-3 pointer-events-auto">
-          {puzzleSummaries.map((s) => (
-            <SummaryCard key={s.puzzleId} summary={s} />
-          ))}
-        </div>
-      )}
+      {/* NOTE: Summary cards removed from canvas auto-display.
+          Summaries are now shown via:
+          1. Hover on finished puzzle in deck
+          2. Click "View Details" on puzzle card
+          If user wants summary on canvas, they can use "Add to Canvas" action from deck.
+      */}
 
       {/* Hint for Controls */}
       <div className="absolute bottom-4 right-4 z-40 text-[#A09C94] text-xs font-mono bg-[#F5F1E8]/80 p-2 rounded pointer-events-none">
@@ -646,6 +646,18 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
 
       {/* Mascot Button */}
       <MascotButton onClick={handleMascotOpen} />
+
+      {/* Zoom Controls */}
+      <ZoomControls
+        scale={scale}
+        onScaleChange={setScale}
+        onFitToCanvas={() => {
+          setScale(1);
+          setOffset({ x: 0, y: 0 });
+        }}
+        minScale={0.2}
+        maxScale={3}
+      />
 
       {/* Mascot Panel */}
       <MascotPanel

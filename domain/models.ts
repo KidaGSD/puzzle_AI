@@ -136,7 +136,27 @@ export type UIEventType =
   | "QUADRANT_REGENERATE"       // Regenerate a single quadrant
   // Output events from orchestrator
   | "PUZZLE_SESSION_GENERATED"  // Pre-generated pieces ready
-  | "QUADRANT_REGENERATED";     // Single quadrant regenerated
+  | "QUADRANT_REGENERATED"      // Single quadrant regenerated
+  // Error and loading events
+  | "AI_ERROR"                  // AI operation failed
+  | "AI_LOADING"                // AI operation in progress
+  | "AI_SUCCESS";               // AI operation completed
+
+// AI Error payload interface
+export type AIErrorSource = 'mascot' | 'puzzle_session' | 'quadrant' | 'synthesis' | 'fragment';
+
+export interface AIErrorPayload {
+  source: AIErrorSource;
+  message: string;
+  recoverable: boolean;
+  retryEventType?: UIEventType;
+  retryPayload?: unknown;
+}
+
+export interface AILoadingPayload {
+  source: AIErrorSource;
+  message: string;
+}
 
 export interface UIEvent {
   type: UIEventType;

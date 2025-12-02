@@ -20,6 +20,8 @@ import {
   PuzzleSessionState,
   FragmentSummary,
   Anchor,
+  AIErrorPayload,
+  AILoadingPayload,
 } from "../domain/models";
 import { usePuzzleSessionStateStore } from "../store/puzzleSessionStateStore";
 import { MascotProposal } from "./agents/mascotAgent";
@@ -56,6 +58,36 @@ const notifyMascotProposal = (proposal: MascotProposal) => {
   if (mascotProposalCallback) {
     mascotProposalCallback(proposal);
   }
+};
+
+/**
+ * Sanitize mascot rationale to replace any fragment IDs with titles.
+ * This is a safety net in case the AI outputs IDs despite prompt instructions.
+ */
+const sanitizeMascotRationale = (
+  rationale: string,
+  fragments: Array<{ id: string; title: string }>
+): string => {
+  let result = rationale;
+
+  // Replace any fragment IDs with their titles
+  fragments.forEach(f => {
+    if (f.id && f.title) {
+      // Match the exact ID (case-insensitive)
+      const idPattern = new RegExp(f.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      result = result.replace(idPattern, `"${f.title}"`);
+    }
+  });
+
+  // Catch any remaining UUID-like strings (both with and without hyphens)
+  // UUID format: 8-4-4-4-12 or 32 hex chars without hyphens
+  const uuidWithHyphensPattern = /[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi;
+  const uuidWithoutHyphensPattern = /\b[a-f0-9]{32}\b/gi;
+
+  result = result.replace(uuidWithHyphensPattern, '[fragment]');
+  result = result.replace(uuidWithoutHyphensPattern, '[fragment]');
+
+  return result;
 };
 
 export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
@@ -99,49 +131,98 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   const handleMascot = async (event: UIEvent) => {
     const state = store.getState();
     const payload: any = event.payload || {};
-    if (payload.action === "start_from_my_question") {
-      const proposal = await runMascotSelf(
-        {
-          processAim: state.project.processAim,
-          userQuestion: payload.userQuestion || "",
-          nearbyFragments: state.fragments.slice(0, 4).map(f => ({ summary: f.summary || f.content, tags: f.tags || [] })),
-          puzzleSummaries: state.puzzleSummaries.slice(0, 4).map(s => ({ id: s.puzzleId, title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
-          preferenceHints: "", // placeholder from preference profile
-        },
-        client,
-      );
-      console.info("[mascot:self]", proposal);
-      // Notify UI with the proposal (using module-level callback)
-      notifyMascotProposal(proposal);
-    } else if (payload.action === "suggest_puzzle") {
-      // Pass fragment details for insightful reasoning
-      const fragmentDetails = state.fragments.slice(0, 5).map(f => ({
+
+    // Emit loading state
+    bus.emitType("AI_LOADING", {
+      source: 'mascot',
+      message: payload.action === "suggest_puzzle" ? 'Analyzing your canvas...' : 'Thinking about your question...',
+    } as AILoadingPayload);
+
+    try {
+      // Build fragment details for sanitization (used in both paths)
+      const fragmentsForSanitization = state.fragments.slice(0, 5).map(f => ({
         id: f.id,
         title: f.title || f.summary?.slice(0, 30) || "Untitled",
-        summary: f.summary || f.content.slice(0, 100),
-        tags: f.tags,
       }));
 
-      const suggestion = await runMascotSuggest(
-        {
-          processAim: state.project.processAim,
-          clusters: state.clusters.map(c => ({ id: c.id, theme: c.theme, fragmentCount: c.fragmentIds.length })),
-          puzzleSummaries: state.puzzleSummaries.slice(0, 4).map(s => ({ id: s.puzzleId, title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
-          preferenceHints: "",
-          fragments: fragmentDetails,
-        },
-        client,
-      );
-      console.info("[mascot:suggest]", suggestion);
-      // If AI suggests a puzzle, notify UI
-      if (suggestion.shouldSuggest && suggestion.centralQuestion) {
+      if (payload.action === "start_from_my_question") {
+        const proposal = await runMascotSelf(
+          {
+            processAim: state.project.processAim,
+            userQuestion: payload.userQuestion || "",
+            nearbyFragments: state.fragments.slice(0, 4).map(f => ({ summary: f.summary || f.content, tags: f.tags || [] })),
+            puzzleSummaries: state.puzzleSummaries.slice(0, 4).map(s => ({ id: s.puzzleId, title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
+            preferenceHints: "", // placeholder from preference profile
+          },
+          client,
+        );
+        console.info("[mascot:self]", proposal);
+
+        // Sanitize rationale to replace any IDs with titles
+        const sanitizedRationale = sanitizeMascotRationale(
+          proposal.rationale || "",
+          fragmentsForSanitization
+        );
+
+        // Emit success
+        bus.emitType("AI_SUCCESS", { source: 'mascot', message: 'Puzzle suggestion ready!' });
+
+        // Notify UI with the proposal (using module-level callback)
         notifyMascotProposal({
-          centralQuestion: suggestion.centralQuestion,
-          puzzleType: suggestion.puzzleType || "CLARIFY",
-          primaryModes: suggestion.primaryModes || [],
-          rationale: suggestion.rationale || "",
+          ...proposal,
+          rationale: sanitizedRationale,
         });
+      } else if (payload.action === "suggest_puzzle") {
+        // Pass fragment details for insightful reasoning
+        const fragmentDetails = state.fragments.slice(0, 5).map(f => ({
+          id: f.id,
+          title: f.title || f.summary?.slice(0, 30) || "Untitled",
+          summary: f.summary || f.content.slice(0, 100),
+          tags: f.tags,
+        }));
+
+        const suggestion = await runMascotSuggest(
+          {
+            processAim: state.project.processAim,
+            clusters: state.clusters.map(c => ({ id: c.id, theme: c.theme, fragmentCount: c.fragmentIds.length })),
+            puzzleSummaries: state.puzzleSummaries.slice(0, 4).map(s => ({ id: s.puzzleId, title: s.title || "", oneLine: s.oneLine || s.directionStatement })),
+            preferenceHints: "",
+            fragments: fragmentDetails,
+          },
+          client,
+        );
+        console.info("[mascot:suggest]", suggestion);
+
+        // Emit success
+        bus.emitType("AI_SUCCESS", { source: 'mascot', message: 'Analysis complete!' });
+
+        // If AI suggests a puzzle, notify UI
+        if (suggestion.shouldSuggest && suggestion.centralQuestion) {
+          // Sanitize rationale to replace any IDs with titles
+          const sanitizedRationale = sanitizeMascotRationale(
+            suggestion.rationale || "",
+            fragmentDetails
+          );
+
+          notifyMascotProposal({
+            centralQuestion: suggestion.centralQuestion,
+            puzzleType: suggestion.puzzleType || "CLARIFY",
+            primaryModes: suggestion.primaryModes || [],
+            rationale: sanitizedRationale,
+          });
+        }
       }
+    } catch (error) {
+      console.error("[orchestrator] Mascot failed:", error);
+
+      // Emit error state
+      bus.emitType("AI_ERROR", {
+        source: 'mascot',
+        message: 'Mascot couldn\'t process your request. Please try again.',
+        recoverable: true,
+        retryEventType: 'MASCOT_CLICKED',
+        retryPayload: payload,
+      } as AIErrorPayload);
     }
   };
 
@@ -150,6 +231,12 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const payload: any = event.payload || {};
     const puzzleId = payload.puzzleId || state.puzzles[0]?.id;
     if (!puzzleId) return;
+
+    // Emit loading state
+    bus.emitType("AI_LOADING", {
+      source: 'synthesis',
+      message: 'Generating puzzle summary...',
+    } as AILoadingPayload);
 
     // Get puzzle info
     const puzzle = state.puzzles.find(p => p.id === puzzleId);
@@ -208,6 +295,9 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
       console.info("[orchestrator] puzzle summary stored", summary);
 
+      // Emit success
+      bus.emitType("AI_SUCCESS", { source: 'synthesis', message: 'Summary generated!' });
+
       // Emit event for UI to show popup (handled by runtime.ts or App.tsx)
       bus.emit({
         type: 'PUZZLE_SESSION_COMPLETED',
@@ -219,6 +309,15 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       });
     } catch (err) {
       console.error("[orchestrator] puzzle summarize failed", err);
+
+      // Emit error
+      bus.emitType("AI_ERROR", {
+        source: 'synthesis',
+        message: 'Failed to generate puzzle summary.',
+        recoverable: true,
+        retryEventType: 'PUZZLE_FINISH_CLICKED',
+        retryPayload: payload,
+      } as AIErrorPayload);
     }
   };
 
@@ -538,6 +637,12 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const state = store.getState();
     const payload: any = event.payload || {};
 
+    // Emit loading state
+    bus.emitType("AI_LOADING", {
+      source: 'puzzle_session',
+      message: 'Generating puzzle pieces...',
+    } as AILoadingPayload);
+
     // Build input for PuzzleSessionAgent with proper fragment data
     const fragmentsSummary: FragmentSummary[] = state.fragments.slice(0, 10).map(f => ({
       id: f.id,
@@ -572,9 +677,24 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         errors: result.errors,
       });
 
+      // Emit success state
+      bus.emitType("AI_SUCCESS", {
+        source: 'puzzle_session',
+        message: 'Puzzle pieces ready!',
+      });
+
       console.log(`[orchestrator] Session generated: ${result.sessionState.session_id}`);
     } catch (error) {
       console.error("[orchestrator] PUZZLE_SESSION_STARTED failed:", error);
+
+      // Emit error state with retry option
+      bus.emitType("AI_ERROR", {
+        source: 'puzzle_session',
+        message: 'Failed to generate puzzle pieces. Please try again.',
+        recoverable: true,
+        retryEventType: 'PUZZLE_SESSION_STARTED',
+        retryPayload: payload,
+      } as AIErrorPayload);
     }
   };
 

@@ -5,33 +5,37 @@
 
 import { Fragment, FragmentType } from "../domain/models";
 
-// All available images in MockupFragments
-const MOCK_IMAGES = [
-  "1.png",
-  "2.png",
-  "3.png",
-  "4.png",
-  "5.png",
-  "55.png",
-  "555.png",
-  "64343.png",
-  "64533.png",
-  "1794ed486688e5573fc69748a73c7377.jpg",
-  "Agencity-Gestion-Hp-1.webp",
-  "Frame 5.png",
-  "a7d0ce0dca36dcbcbb06d3739a1f1aab.jpg",
-  "c2624ed35c1a1466cc0488e11f917be7.jpg",
-  "ddk5.png",
-  "df4.png",
-  "dfd.png",
-  "dsr4rg.png",
-  "resdss5.png",
-  "sdfdlv.png",
-  "sdffd4.png",
-  "sdlfgfb.png",
-  "sdr.png",
-  "sfddfdf.png",
-];
+// All available images in MockupFragments with meaningful titles
+// Maps filename -> title for descriptive naming
+const MOCK_IMAGE_METADATA: Record<string, { title: string; description: string }> = {
+  "1.png": { title: "Matcha Mood Board 1", description: "Color and texture inspiration" },
+  "2.png": { title: "Matcha Mood Board 2", description: "Brand visual references" },
+  "3.png": { title: "Matcha Mood Board 3", description: "Design composition study" },
+  "4.png": { title: "Packaging Reference", description: "Packaging design inspiration" },
+  "5.png": { title: "Typography Study", description: "Font and lettering exploration" },
+  "55.png": { title: "Color Palette Reference", description: "Brand color exploration" },
+  "555.png": { title: "Pattern Design", description: "Visual pattern reference" },
+  "64343.png": { title: "Matcha Tea Set", description: "Product photography reference" },
+  "64533.png": { title: "Lifestyle Shot", description: "Brand lifestyle imagery" },
+  "1794ed486688e5573fc69748a73c7377.jpg": { title: "Organic Texture", description: "Natural texture reference" },
+  "Agencity-Gestion-Hp-1.webp": { title: "Digital Interface", description: "UI/UX design reference" },
+  "Frame 5.png": { title: "Layout Composition", description: "Design layout study" },
+  "a7d0ce0dca36dcbcbb06d3739a1f1aab.jpg": { title: "Brand Colors", description: "Color scheme reference" },
+  "c2624ed35c1a1466cc0488e11f917be7.jpg": { title: "Matcha Aesthetic", description: "Visual aesthetic reference" },
+  "ddk5.png": { title: "Minimal Design", description: "Minimalist design inspiration" },
+  "df4.png": { title: "Modern Layout", description: "Contemporary design reference" },
+  "dfd.png": { title: "Visual Concept", description: "Design concept exploration" },
+  "dsr4rg.png": { title: "Graphic Element", description: "Visual element reference" },
+  "resdss5.png": { title: "Design System", description: "Brand system components" },
+  "sdfdlv.png": { title: "Icon Reference", description: "Iconography exploration" },
+  "sdffd4.png": { title: "Brand Element", description: "Brand identity element" },
+  "sdlfgfb.png": { title: "Visual Style", description: "Style direction reference" },
+  "sdr.png": { title: "Design Detail", description: "Detailed design element" },
+  "sfddfdf.png": { title: "Creative Reference", description: "Creative inspiration" },
+};
+
+// List of all image filenames
+const MOCK_IMAGES = Object.keys(MOCK_IMAGE_METADATA);
 
 // Text fragments parsed from text_fragments.txt - separated by meaningful sections
 const TEXT_FRAGMENT_SECTIONS = [
@@ -181,18 +185,28 @@ export const getRandomImageFragments = (
   const shuffled = shuffleArray(MOCK_IMAGES);
   const selected = shuffled.slice(0, Math.min(count, MOCK_IMAGES.length));
 
-  return selected.map((filename, index) => ({
-    id: generateId(),
-    projectId,
-    type: "IMAGE" as FragmentType,
-    title: filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '), // Generate title from filename
-    content: `/MockupFragments/${filename}`,
-    position: getRandomPosition(index, count),
-    size: { width: 200, height: 150 },
-    labels: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  }));
+  return selected.map((filename, index) => {
+    // Get metadata for this image, with fallback for unknown files
+    const metadata = MOCK_IMAGE_METADATA[filename] || {
+      title: `Image Reference ${index + 1}`,
+      description: "Visual reference for design exploration",
+    };
+
+    return {
+      id: generateId(),
+      projectId,
+      type: "IMAGE" as FragmentType,
+      title: metadata.title,
+      summary: metadata.description, // Use description, NOT file path
+      content: `/MockupFragments/${filename}`, // Keep file path only in content
+      position: getRandomPosition(index, count),
+      size: { width: 200, height: 150 },
+      labels: [],
+      tags: [], // Don't auto-generate tags from filename
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+  });
 };
 
 /**

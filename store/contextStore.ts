@@ -66,6 +66,60 @@ const cloneStore = (store: ProjectStore): ProjectStore =>
     ? structuredClone(store)
     : JSON.parse(JSON.stringify(store)) as ProjectStore;
 
+/**
+ * Generate a default title for a fragment based on its content
+ */
+const generateDefaultTitle = (fragment: Fragment): string => {
+  if (fragment.type === 'IMAGE') {
+    return `Image ${new Date().toLocaleDateString()}`;
+  }
+  if (fragment.type === 'LINK') {
+    // Extract domain from URL
+    try {
+      const url = new URL(fragment.content);
+      return `Link: ${url.hostname}`;
+    } catch {
+      return 'Link Reference';
+    }
+  }
+  if (fragment.type === 'TEXT' && fragment.content) {
+    // Take first 4 words
+    const words = fragment.content.trim().split(/\s+/).slice(0, 4).join(' ');
+    return words.length > 30 ? words.slice(0, 27) + '...' : words || 'Text Fragment';
+  }
+  return 'Untitled Fragment';
+};
+
+/**
+ * Generate a default summary for a fragment based on its content
+ */
+const generateDefaultSummary = (fragment: Fragment): string => {
+  if (fragment.type === 'IMAGE') {
+    return 'Image content for visual reference';
+  }
+  if (fragment.type === 'LINK') {
+    return `External link: ${fragment.content.slice(0, 100)}`;
+  }
+  if (fragment.content) {
+    // First 150 chars for text content
+    return fragment.content.slice(0, 150) + (fragment.content.length > 150 ? '...' : '');
+  }
+  return '';
+};
+
+/**
+ * Ensure fragment has complete metadata for AI context
+ */
+const validateFragment = (fragment: Fragment): Fragment => {
+  return {
+    ...fragment,
+    title: fragment.title || generateDefaultTitle(fragment),
+    summary: fragment.summary || generateDefaultSummary(fragment),
+    tags: fragment.tags || [],
+    labels: fragment.labels || [],
+  };
+};
+
 export const createContextStore = (
   initialStore: ProjectStore,
   adapter?: StorageAdapter,
@@ -129,11 +183,22 @@ export const createContextStore = (
 
   const upsertFragment = (fragment: Fragment) =>
     setState(draft => {
-      const idx = draft.fragments.findIndex(f => f.id === fragment.id);
+      // Validate and ensure fragment has complete metadata
+      const validatedFragment = validateFragment(fragment);
+
+      const idx = draft.fragments.findIndex(f => f.id === validatedFragment.id);
       if (idx >= 0) {
-        draft.fragments[idx] = fragment;
+        // Update existing - preserve AI-generated fields if not provided
+        const existing = draft.fragments[idx];
+        draft.fragments[idx] = {
+          ...existing,
+          ...validatedFragment,
+          // Keep existing AI summaries/tags if not explicitly provided in update
+          summary: fragment.summary || existing.summary || validatedFragment.summary,
+          tags: fragment.tags?.length ? fragment.tags : existing.tags || validatedFragment.tags,
+        };
       } else {
-        draft.fragments.push(fragment);
+        draft.fragments.push(validatedFragment);
       }
     });
 
@@ -158,7 +223,15 @@ export const createContextStore = (
 
   const addPuzzle = (puzzle: Puzzle) =>
     setState(draft => {
-      draft.puzzles.push(puzzle);
+      // Check if puzzle with same ID already exists (deduplication)
+      const existingIndex = draft.puzzles.findIndex(p => p.id === puzzle.id);
+      if (existingIndex >= 0) {
+        // Update existing puzzle instead of adding duplicate
+        draft.puzzles[existingIndex] = puzzle;
+        console.log(`[contextStore] Updated existing puzzle: ${puzzle.id}`);
+      } else {
+        draft.puzzles.push(puzzle);
+      }
     });
 
   const addAnchor = (anchor: Anchor) =>
@@ -184,7 +257,15 @@ export const createContextStore = (
 
   const addPuzzleSummary = (summary: PuzzleSummary) =>
     setState(draft => {
-      draft.puzzleSummaries.push(summary);
+      // Check if summary for this puzzle already exists (deduplication)
+      const existingIndex = draft.puzzleSummaries.findIndex(s => s.puzzleId === summary.puzzleId);
+      if (existingIndex >= 0) {
+        // Update existing summary instead of adding duplicate
+        draft.puzzleSummaries[existingIndex] = summary;
+        console.log(`[contextStore] Updated existing puzzle summary: ${summary.puzzleId}`);
+      } else {
+        draft.puzzleSummaries.push(summary);
+      }
     });
 
   const addPieceEvent = (event: PieceEvent) =>
