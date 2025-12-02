@@ -50,3 +50,17 @@ export {
   runCentralQuestionAgent
 } from './centralQuestionAgent';
 export type { CentralQuestionInput, CentralQuestionOutput } from './centralQuestionAgent';
+
+// === Mascot Agent (Entry Point) ===
+export {
+  runMascotSelf,
+  runMascotSuggest
+} from './mascotAgent';
+export type { MascotSelfInput, MascotSuggestInput, MascotProposal, MascotSuggestOutput } from './mascotAgent';
+
+// === Synthesis Agent (End Stage) ===
+export {
+  runSynthesisAgent,
+  synthesizePuzzle
+} from './synthesisAgent';
+export type { SynthesisInput, SynthesisOutput } from './synthesisAgent';

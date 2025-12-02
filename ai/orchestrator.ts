@@ -2,12 +2,14 @@ import { ContextStore } from "../store/contextStore";
 import { EventBus } from "../store/eventBus";
 import { createLLMClient } from "./adkClient";
 import { runFragmentContextAgent } from "./agents/fragmentContextAgent";
-import { runMascotSelf, runMascotSuggest } from "./agents/mascotAgent";
+// ADK Mascot Agent (entry point) - migrated to ADK
+import { runMascotSelf, runMascotSuggest } from "./adk/agents/mascotAgent";
 import { runPuzzleDesignerAgent } from "./agents/puzzleDesignerAgent";
 import { runQuadrantPieceAgent, FragmentContext } from "./agents/quadrantPieceAgent";
 // Multi-agent system imports
 import { runPuzzleSessionAgent, regenerateQuadrant as legacyRegenerateQuadrant } from "./agents/puzzleSessionAgent";
-import { runPuzzleSynthesisAgent, PuzzleSynthesisInput } from "./agents/puzzleSynthesisAgent";
+// ADK Synthesis Agent (end stage) - migrated to ADK
+import { runSynthesisAgent, SynthesisInput } from "./adk/agents/synthesisAgent";
 // Feature extraction for grounded AI reasoning
 import {
   extractBatchFeatures,
@@ -41,7 +43,7 @@ import {
   Puzzle,
 } from "../domain/models";
 import { usePuzzleSessionStateStore } from "../store/puzzleSessionStateStore";
-import { MascotProposal } from "./agents/mascotAgent";
+import { MascotProposal } from "./adk/agents/mascotAgent";
 import { useGameStore } from "../store/puzzleSessionStore";
 import { COLORS, ALL_SHAPES } from "../constants/puzzleGrid";
 import { QuadrantType, PieceCategoryType } from "../types";
@@ -284,8 +286,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     });
 
     try {
-      // Build input for synthesis agent
-      const synthesisInput: PuzzleSynthesisInput = {
+      // Build input for ADK synthesis agent
+      const synthesisInput: SynthesisInput = {
         puzzleId,
         puzzleType,
         centralQuestion: payload.centralQuestion || puzzle?.centralQuestion || "What is the core question?",
@@ -294,8 +296,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         placedPieces,
       };
 
-      // Run synthesis agent
-      const summary = await runPuzzleSynthesisAgent(synthesisInput, client);
+      // Run ADK synthesis agent
+      const summary = await runSynthesisAgent(synthesisInput, client);
 
       // Store summary
       store.setState(draft => {
@@ -669,7 +671,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     const puzzleType: PuzzleType = payload.puzzleType || "CLARIFY";
     const anchors = payload.anchors || [];
 
-    console.log(`[orchestrator] PUZZLE_SESSION_STARTED: type=${puzzleType}, fragments=${state.fragments.length}`);
+    console.log(`[orchestrator] ⚡⚡⚡ PUZZLE_SESSION_STARTED: type=${puzzleType}, fragments=${state.fragments.length}`);
+    console.log(`[orchestrator] ⚡⚡⚡ centralQuestion from payload: ${payload.centralQuestion || 'NOT PROVIDED'}`);
 
     try {
       // ===== ADK RUNNER CALL =====
@@ -702,6 +705,16 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
       console.log(`[orchestrator] Puzzle generated: "${sessionState.central_question}" (quality: ${sessionState.quality_score})`);
 
+      // DEBUG: Log pre_gen_pieces from ADK
+      console.log(`[orchestrator DEBUG] pre_gen_pieces from ADK:`);
+      console.log(`  FORM: ${sessionState.pre_gen_pieces?.FORM?.length || 0} pieces`);
+      console.log(`  MOTION: ${sessionState.pre_gen_pieces?.MOTION?.length || 0} pieces`);
+      console.log(`  EXPRESSION: ${sessionState.pre_gen_pieces?.EXPRESSION?.length || 0} pieces`);
+      console.log(`  FUNCTION: ${sessionState.pre_gen_pieces?.FUNCTION?.length || 0} pieces`);
+      if (sessionState.pre_gen_pieces?.FORM?.length) {
+        console.log(`  FORM first piece: ${JSON.stringify(sessionState.pre_gen_pieces.FORM[0])}`);
+      }
+
       // ===== OUTPUT MAPPING =====
       // Transform ADK schema to legacy UI format
       const mapPieces = (pieces: any[], mode: DesignMode) =>
@@ -728,6 +741,13 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         function_pieces: mapPieces(sessionState.pre_gen_pieces.FUNCTION, 'FUNCTION'),
         generation_status: 'completed',
       };
+
+      // DEBUG: Log mapped pieces going to UI
+      console.log(`[orchestrator DEBUG] Mapped pieces for UI:`);
+      console.log(`  form_pieces: ${legacySessionState.form_pieces.length} - ${legacySessionState.form_pieces.slice(0, 2).map(p => p.text).join(', ')}`);
+      console.log(`  motion_pieces: ${legacySessionState.motion_pieces.length} - ${legacySessionState.motion_pieces.slice(0, 2).map(p => p.text).join(', ')}`);
+      console.log(`  expression_pieces: ${legacySessionState.expression_pieces.length} - ${legacySessionState.expression_pieces.slice(0, 2).map(p => p.text).join(', ')}`);
+      console.log(`  function_pieces: ${legacySessionState.function_pieces.length} - ${legacySessionState.function_pieces.slice(0, 2).map(p => p.text).join(', ')}`);
 
       // ===== UI NOTIFICATION =====
       if (puzzleSessionCallback) {
@@ -1104,7 +1124,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         break;
       // Multi-agent system events - ADK is now the primary workflow
       case "PUZZLE_SESSION_STARTED":
-        console.log('[orchestrator] handling PUZZLE_SESSION_STARTED via ADK');
+        console.log('[orchestrator] ⚡⚡⚡ handling PUZZLE_SESSION_STARTED via ADK');
+        console.log('[orchestrator] ⚡⚡⚡ payload:', JSON.stringify(event.payload));
         safeAsync(() => handlePuzzleSessionStartedADK(event), "PUZZLE_SESSION_STARTED");
         break;
       case "PUZZLE_SESSION_COMPLETED":

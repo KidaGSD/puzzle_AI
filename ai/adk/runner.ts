@@ -27,7 +27,7 @@ import {
 import { runQuadrantManager, EnrichedFragment } from "./agents/quadrantManagerAgent";
 import { runCentralQuestionAgent } from "./agents/centralQuestionAgent";
 import { applyDiversityFilter } from "./agents/filterAgent";
-import { MODE_CONFIG } from "./agents/quadrantAgent";
+import { MODE_CONFIG, runQuadrantAgentADK } from "./agents/quadrantAgent";
 import { getFragmentFeatures } from "./tools/featureStoreTool";
 import { getFragmentsForMode } from "./tools/retrievalTool";
 import { enqueuePieces, clearPool, getPoolStats } from "./tools/preGenPoolTool";
@@ -183,8 +183,11 @@ export const startPuzzleSession = async (
   session.state.set('centralQuestion', centralQuestion);
 
   // ========== Step 3: Enrich fragments with features ==========
-  console.log('[PuzzleRunner] Step 3: Enriching fragments...');
+  console.log(`[PuzzleRunner] Step 3: Enriching ${input.fragments.length} fragments...`);
   const modes: DesignMode[] = ['FORM', 'MOTION', 'EXPRESSION', 'FUNCTION'];
+
+  // DEBUG: Log input fragments
+  console.log(`[PuzzleRunner DEBUG] Input fragments: ${JSON.stringify(input.fragments.map(f => ({ id: f.id, title: f.title, type: f.type })))}`);
 
   // Build enriched fragments for the QuadrantManager
   const enrichedFragments: EnrichedFragment[] = input.fragments.map(f => {
@@ -228,6 +231,9 @@ export const startPuzzleSession = async (
     }
   }
 
+  // DEBUG: Log enriched fragments
+  console.log(`[PuzzleRunner DEBUG] Enriched fragments: ${JSON.stringify(enrichedFragments.map(f => ({ id: f.id, title: f.title, keywords: f.keywords?.slice(0, 3), themes: f.themes?.slice(0, 2) })))}`);
+
   // ========== Step 4: Run QuadrantManager (1 Manager + 4 Agents) ==========
   console.log('[PuzzleRunner] Step 4: Running QuadrantManager (1 manager + 4 agents)...');
 
@@ -249,6 +255,10 @@ export const startPuzzleSession = async (
     EXPRESSION: [],
     FUNCTION: []
   };
+
+  // DEBUG: Log manager result
+  console.log(`[PuzzleRunner DEBUG] Manager result pieces: FORM=${managerResult.pieces.FORM?.length || 0}, MOTION=${managerResult.pieces.MOTION?.length || 0}, EXPRESSION=${managerResult.pieces.EXPRESSION?.length || 0}, FUNCTION=${managerResult.pieces.FUNCTION?.length || 0}`);
+  console.log(`[PuzzleRunner DEBUG] Manager meta: ${JSON.stringify(managerResult.meta)}`);
 
   const totalQuality = managerResult.meta.qualityScore;
   let successCount = 0;

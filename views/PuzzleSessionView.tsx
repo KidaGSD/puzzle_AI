@@ -4,7 +4,7 @@
  * Handles passing puzzle data and exit callback
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Board } from '../components/puzzle/Board';
 import { contextStore, ensurePuzzleSync, getPuzzleSyncInstance, ensurePuzzleSessionStateSync, startPuzzleSession, ensureOrchestrator } from '../store/runtime';
 import { useGameStore } from '../store/puzzleSessionStore';
@@ -20,14 +20,22 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
   puzzleId,
   onExit,
 }) => {
+  console.log('[PuzzleSessionView] ⚡⚡⚡ RENDER - puzzleId:', puzzleId);
+
   const [puzzle, setPuzzle] = useState<DomainPuzzle | null>(null);
   const [processAim, setProcessAim] = useState('');
   const setCurrentPuzzleId = useGameStore((state) => state.setCurrentPuzzleId);
   const clearPieces = useGameStore((state) => state.clearPieces);
   const { isGenerating, sessionState, clearSession } = usePuzzleSessionStateStore();
 
+  // Track if session has been started for this puzzleId
+  const sessionStartedRef = useRef<string | null>(null);
+
   // Initialize puzzle sync, orchestrator, and trigger pre-generation
   useEffect(() => {
+    console.log('[PuzzleSessionView] ⚡⚡⚡ useEffect RUNNING - puzzleId:', puzzleId);
+    console.log('[PuzzleSessionView] ⚡⚡⚡ sessionStartedRef.current:', sessionStartedRef.current);
+
     // Ensure sync adapter is attached
     ensurePuzzleSync();
 
@@ -39,15 +47,23 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
 
     // Set the current puzzle ID for the session
     setCurrentPuzzleId(puzzleId);
-    console.log(`[PuzzleSessionView] Set currentPuzzleId: ${puzzleId}`);
+    console.log(`[PuzzleSessionView] ⚡⚡⚡ Set currentPuzzleId: ${puzzleId}`);
 
-    // Get puzzle type from store and trigger pre-generation
-    const state = contextStore.getState();
-    const foundPuzzle = state.puzzles.find(p => p.id === puzzleId);
-    const puzzleType: PuzzleType = foundPuzzle?.type || 'CLARIFY';
+    // Only start session if we haven't already for this puzzleId
+    if (sessionStartedRef.current !== puzzleId) {
+      // Get puzzle type from store and trigger pre-generation
+      const state = contextStore.getState();
+      const foundPuzzle = state.puzzles.find(p => p.id === puzzleId);
+      const puzzleType: PuzzleType = foundPuzzle?.type || 'CLARIFY';
 
-    console.log(`[PuzzleSessionView] Starting puzzle session with type: ${puzzleType}`);
-    startPuzzleSession(puzzleType);
+      console.log(`[PuzzleSessionView] ⚡⚡⚡ Starting puzzle session with type: ${puzzleType}, puzzleId: ${puzzleId}`);
+      console.log(`[PuzzleSessionView] ⚡⚡⚡ Found puzzle: ${foundPuzzle ? foundPuzzle.centralQuestion : 'NOT FOUND'}`);
+
+      sessionStartedRef.current = puzzleId;
+      startPuzzleSession(puzzleType);
+    } else {
+      console.log(`[PuzzleSessionView] ⚡⚡⚡ Session already started for puzzleId: ${puzzleId}, skipping`);
+    }
 
     // Cleanup on unmount
     return () => {
@@ -60,6 +76,8 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
       clearPieces();
       setCurrentPuzzleId(null);
       clearSession();
+      // Reset the ref so next time we enter this puzzle, we start fresh
+      sessionStartedRef.current = null;
       console.log('[PuzzleSessionView] Cleaned up puzzle session');
     };
   }, [puzzleId, setCurrentPuzzleId, clearPieces, clearSession]);

@@ -22,17 +22,47 @@ export type { PuzzleSessionResult } from './runner';
 
 // Agents
 export {
+  // Legacy quadrant agent (backward compatibility)
   createQuadrantAgentConfig,
   createAllQuadrantAgentConfigs,
   runQuadrantAgentADK,
   MODE_CONFIG,
   PUZZLE_TYPE_CONFIG,
+  // Filter agent
   applyDiversityFilter,
   filterPieces,
   createFilterTool,
-  runCentralQuestionAgent
+  // Central question agent
+  runCentralQuestionAgent,
+  // 1 Manager + 4 Agents architecture
+  runQuadrantManager,
+  assignFragmentsToModes,
+  runFormAgent,
+  runMotionAgent,
+  runExpressionAgent,
+  runFunctionAgent,
+  // Mascot agent (entry point)
+  runMascotSelf,
+  runMascotSuggest,
+  // Synthesis agent (end stage)
+  runSynthesisAgent
 } from './agents';
-export type { CentralQuestionInput, CentralQuestionOutput } from './agents';
+export type {
+  CentralQuestionInput,
+  CentralQuestionOutput,
+  // Manager types
+  EnrichedFragment,
+  ManagerInput,
+  ManagerOutput,
+  // Mascot types
+  MascotSelfInput,
+  MascotSuggestInput,
+  MascotProposal,
+  MascotSuggestOutput,
+  // Synthesis types
+  SynthesisInput,
+  SynthesisOutput
+} from './agents';
 
 // Tools
 export {

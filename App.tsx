@@ -93,7 +93,9 @@ export default function App() {
     const puzzle = state.puzzles.find(p => p.id === puzzleId);
     const puzzleTitle = puzzle?.centralQuestion?.slice(0, 30) || 'your puzzle';
 
-    console.log('[app] entering puzzle:', puzzleId);
+    console.log('[app] ⚡⚡⚡ handleEnterPuzzle called with puzzleId:', puzzleId);
+    console.log('[app] ⚡⚡⚡ puzzle found:', puzzle ? 'YES' : 'NO');
+    console.log('[app] ⚡⚡⚡ puzzle type:', puzzle?.type);
 
     setAppState({
       currentView: 'canvas', // Keep showing canvas during transition

@@ -134,14 +134,16 @@ export const ensurePuzzleSessionStateSync = () => {
  * Start a new puzzle session with pre-generation
  */
 export const startPuzzleSession = (puzzleType: 'CLARIFY' | 'EXPAND' | 'REFINE' = 'CLARIFY') => {
-  console.log(`[runtime] Starting puzzle session with type: ${puzzleType}`);
+  console.log(`[runtime] ⚡ Starting puzzle session with type: ${puzzleType}`);
 
   // Clear existing session
   usePuzzleSessionStateStore.getState().clearSession();
 
   // Emit event to trigger multi-agent pre-generation
+  console.log(`[runtime] ⚡ Emitting PUZZLE_SESSION_STARTED event...`);
   eventBus.emitType('PUZZLE_SESSION_STARTED', {
     puzzleType,
     anchors: [], // Could be passed from UI
   });
+  console.log(`[runtime] ⚡ PUZZLE_SESSION_STARTED event emitted`);
 };
