@@ -32,7 +32,9 @@ import { getFragmentFeatures } from "./tools/featureStoreTool";
 import { getFragmentsForMode } from "./tools/retrievalTool";
 import { enqueuePieces, clearPool, getPoolStats } from "./tools/preGenPoolTool";
 import { readPreferenceHints } from "./tools/preferenceTool";
-import { LLMClient } from "../adkClient";
+import { LLMClient, createProClient } from "../adkClient";
+// Background services for precomputed insights
+import { serviceManager } from "./services";
 import { v4 as uuidv4 } from "uuid";
 
 // ========== Session Factory ==========
@@ -143,27 +145,69 @@ export const startPuzzleSession = async (
   const toolContext = createToolContext(session);
   await clearPool({}, toolContext);
 
+  // ========== Check for precomputed insights (instant if available) ==========
+  const precomputed = serviceManager.getPrecomputedInsights();
+  const precomputedFragments = serviceManager.getEnrichedFragments();
+  const usePrecomputed = precomputed && !precomputed.isStale && precomputedFragments;
+
+  if (usePrecomputed) {
+    console.log(`[PuzzleRunner] ⚡ Using precomputed insights (age: ${Date.now() - precomputed.timestamp}ms)`);
+  } else {
+    console.log('[PuzzleRunner] Computing fresh insights (no precomputed data available)');
+  }
+
   // ========== Step 1: Extract features from fragments ==========
   console.log('[PuzzleRunner] Step 1: Extracting features...');
   let fragmentFeatures: FragmentFeatureSchema[] = [];
-  try {
-    const featureResult = await getFragmentFeatures(
-      { fragmentIds: input.fragments.map(f => f.id), forceRefresh: false },
-      toolContext
-    );
-    if (featureResult.success && featureResult.data) {
-      fragmentFeatures = featureResult.data.features;
-      session.state.set('fragmentFeatures', fragmentFeatures);
-      console.log(`[PuzzleRunner] Extracted features: ${featureResult.data.cacheHits} cached, ${featureResult.data.newExtractions} new`);
+
+  if (usePrecomputed) {
+    // Use precomputed features from background service
+    const allFeatures = serviceManager.getAllFragmentFeatures();
+    fragmentFeatures = input.fragments.map(f => {
+      const cached = allFeatures.get(f.id);
+      return {
+        fragmentId: f.id,
+        type: f.type === 'IMAGE' ? 'IMAGE' as const : 'TEXT' as const,
+        analysisStatus: cached ? 'complete' : 'pending',
+        updatedAt: cached?.extractedAt || Date.now(),
+        keywords: cached?.keywords || [],
+        themes: cached?.themes || [],
+        mood: cached?.mood,
+        palette: cached?.palette,
+        objects: cached?.objects,
+        uniqueInsight: cached?.uniqueInsight
+      };
+    });
+    console.log(`[PuzzleRunner] Using ${fragmentFeatures.length} precomputed features (instant)`);
+  } else {
+    // Fall back to on-demand extraction
+    try {
+      const featureResult = await getFragmentFeatures(
+        { fragmentIds: input.fragments.map(f => f.id), forceRefresh: false },
+        toolContext
+      );
+      if (featureResult.success && featureResult.data) {
+        fragmentFeatures = featureResult.data.features;
+        session.state.set('fragmentFeatures', fragmentFeatures);
+        console.log(`[PuzzleRunner] Extracted features: ${featureResult.data.cacheHits} cached, ${featureResult.data.newExtractions} new`);
+      }
+    } catch (err) {
+      console.warn('[PuzzleRunner] Feature extraction failed, continuing without:', err);
     }
-  } catch (err) {
-    console.warn('[PuzzleRunner] Feature extraction failed, continuing without:', err);
   }
 
   // ========== Step 2: Generate central question ==========
   console.log('[PuzzleRunner] Step 2: Generating central question...');
   let centralQuestion = input.centralQuestion;
-  if (!centralQuestion) {
+
+  if (!centralQuestion && usePrecomputed && precomputed!.potentialQuestions.length > 0) {
+    // Use precomputed question (instant)
+    const bestQuestion = precomputed!.potentialQuestions[0];
+    centralQuestion = bestQuestion.question;
+    console.log(`[PuzzleRunner] Using precomputed question: "${centralQuestion}" (confidence: ${bestQuestion.confidence})`);
+  } else if (!centralQuestion) {
+    // Generate fresh using Pro model for quality
+    const proClient = createProClient();
     try {
       const questionResult = await runCentralQuestionAgent({
         processAim: input.processAim,
@@ -171,7 +215,7 @@ export const startPuzzleSession = async (
         fragments: input.fragments,
         fragmentFeatures,
         previousQuestions: [] // Could be passed from store
-      }, client);
+      }, proClient);
 
       centralQuestion = questionResult.question;
       console.log(`[PuzzleRunner] Central question: "${centralQuestion}" (valid=${questionResult.isValid}, retries=${questionResult.retryCount})`);

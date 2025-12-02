@@ -7,6 +7,8 @@ import { attachOrchestratorStub } from "../ai/orchestratorStub";
 import { MascotProposal } from "../ai/agents/mascotAgent";
 import { MATCHA_PROJECT, loadMockFragments } from "../services/mockDataLoader";
 import { usePuzzleSessionStateStore } from "./puzzleSessionStateStore";
+// Background AI Services
+import { serviceManager, PrecomputedInsights, EnrichedFragment } from "../ai/adk/services";
 
 // Use the matcha brand project as default
 const defaultProject: Project = MATCHA_PROJECT;
@@ -42,6 +44,73 @@ console.log('[runtime] Auto-initializing mock data...');
 initializeMockData();
 
 export const eventBus = createEventBus();
+
+// ========== Background AI Services ==========
+
+let aiServicesStarted = false;
+
+/**
+ * Initialize background AI services
+ * Call this on app mount to start context collection
+ */
+export const initializeAIServices = () => {
+  if (aiServicesStarted) {
+    console.log('[runtime] AI services already started');
+    return;
+  }
+
+  console.log('[runtime] Starting background AI services...');
+  serviceManager.start(eventBus, contextStore);
+  aiServicesStarted = true;
+  console.log('[runtime] Background AI services started');
+};
+
+/**
+ * Stop background AI services
+ * Call this on app unmount
+ */
+export const stopAIServices = () => {
+  if (!aiServicesStarted) return;
+
+  console.log('[runtime] Stopping background AI services...');
+  serviceManager.stop();
+  aiServicesStarted = false;
+};
+
+/**
+ * Check if AI services are ready (context collected)
+ */
+export const isAIReady = (): boolean => {
+  return serviceManager.isReady();
+};
+
+/**
+ * Get AI service status
+ */
+export const getAIStatus = () => {
+  return serviceManager.getStatus();
+};
+
+/**
+ * Get precomputed insights for instant puzzle generation
+ */
+export const getPrecomputedInsights = (): PrecomputedInsights | null => {
+  return serviceManager.getPrecomputedInsights();
+};
+
+/**
+ * Get enriched fragments ready for puzzle generation
+ */
+export const getEnrichedFragments = (): EnrichedFragment[] | null => {
+  return serviceManager.getEnrichedFragments();
+};
+
+/**
+ * Force immediate recomputation of AI insights
+ */
+export const forceAIRecompute = async (): Promise<void> => {
+  await serviceManager.forceRecompute();
+};
 
 // Puzzle session sync adapter - bridges visual layer to domain layer
 let puzzleSyncInstance: PuzzleSyncAdapter | null = null;

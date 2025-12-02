@@ -23,6 +23,7 @@ dist-ssr
 *.sw?
 User Journey Map.png
 
+/Users/huangjunda/Desktop/HumanFlourishing/puzzle_AI/.env
 archive
 .env
 AGENTS.md

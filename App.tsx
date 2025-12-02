@@ -9,7 +9,7 @@ import { PuzzleSessionView } from './views/PuzzleSessionView';
 import { LoadingTransition } from './components/common/LoadingTransition';
 import { PuzzleSummaryPopup } from './components/puzzle/PuzzleSummaryPopup';
 import { AIFeedback } from './components/common/AIFeedback';
-import { contextStore, eventBus, ensureOrchestrator, getPuzzleSyncInstance } from './store/runtime';
+import { contextStore, eventBus, ensureOrchestrator, getPuzzleSyncInstance, initializeAIServices, stopAIServices } from './store/runtime';
 import { PuzzleSummary, PuzzleType } from './domain/models';
 
 // View types
@@ -48,7 +48,7 @@ export default function App() {
   // Ref for orchestrator cleanup
   const detachOrchestratorRef = useRef<null | (() => void)>(null);
 
-  // Attach orchestrator once on mount
+  // Attach orchestrator and start background AI services on mount
   // Note: Mock data is auto-initialized in runtime.ts at module load time
   useEffect(() => {
     console.log('[app] useEffect: attaching orchestrator...');
@@ -56,6 +56,9 @@ export default function App() {
     detachOrchestratorRef.current = detach;
     console.log('[app] orchestrator attached');
     console.log('[app] Fragments in store:', contextStore.getState().fragments.length);
+
+    // Start background AI services (context collection, insight precomputation)
+    initializeAIServices();
 
     // Subscribe to PUZZLE_SESSION_COMPLETED to show summary popup
     const unsubscribe = eventBus.subscribe((event) => {
@@ -79,6 +82,7 @@ export default function App() {
     return () => {
       console.log('[app] cleaning up orchestrator');
       unsubscribe();
+      stopAIServices();
       // Don't call detach - singleton pattern persists across re-renders
     };
   }, []);
