@@ -27,6 +27,11 @@ export interface JsonSchema {
 }
 
 /**
+ * Model tier for different task complexities
+ */
+export type ModelTier = 'flash' | 'pro';
+
+/**
  * LLM Client interface with text, multimodal, and structured output support
  */
 export interface LLMClient {
@@ -61,25 +66,28 @@ export interface LLMClient {
   readonly isMock: boolean;
   /** The model being used */
   readonly model: string;
+  /** The model tier (flash or pro) */
+  readonly tier: ModelTier;
 }
 
 // Vite/browser-safe env resolution
 const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || {};
 
 /**
- * Gemini 3 Pro Preview - 1M context window, advanced reasoning, full multimodal
- * See: https://ai.google.dev/gemini-api/docs/gemini-3
+ * Gemini Model Configuration
  *
- * Model options:
- * - gemini-3-pro-preview: 1M input / 64k output, best for complex reasoning
- * - gemini-3-pro-image-preview: 65k input, can generate images
- * - gemini-2.5-pro: Previous generation, still good for most tasks
+ * Available models (as of Dec 2024):
+ * - gemini-2.5-flash: Fast, efficient, good for most tasks (RECOMMENDED for speed)
+ * - gemini-2.5-pro: Best quality, complex reasoning (use sparingly)
+ *
+ * Rate limits (free tier):
+ * - Flash: 15 RPM, 1M TPM, 1500 RPD
+ * - Pro: 2 RPM, 32K TPM, 50 RPD
  */
-const defaultModel =
-  env.VITE_GEMINI_MODEL ||
-  env.GEMINI_MODEL ||
-  (typeof process !== "undefined" ? process.env.GEMINI_MODEL : "") ||
-  "gemini-3-pro-preview";  // Upgraded to Gemini 3 for better reasoning + VLM
+const MODELS = {
+  flash: 'gemini-2.5-flash',
+  pro: 'gemini-2.5-pro',
+} as const;
 
 const apiKey =
   env.VITE_GEMINI_API_KEY ||
@@ -87,13 +95,74 @@ const apiKey =
   (typeof process !== "undefined" ? process.env.GEMINI_API_KEY || process.env.API_KEY : "");
 
 /**
- * Default temperature for Gemini 3
- * Note: Gemini 3 docs recommend keeping temperature at 1.0 for best results
- * Lowering may cause unexpected behavior on complex reasoning tasks
+ * Default temperature - 0.7 for balanced creativity/consistency
  */
-const DEFAULT_TEMPERATURE = 1.0;
+const DEFAULT_TEMPERATURE = 0.7;
+
+/**
+ * Retry configuration
+ */
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+};
 
 const cleanText = (text?: string | null) => (text || "").trim();
+
+/**
+ * Sleep helper for retry delays
+ */
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Retry with exponential backoff
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  context: string,
+  maxRetries = RETRY_CONFIG.maxRetries
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+
+      // Check if it's a rate limit error (429)
+      const isRateLimit = error?.message?.includes('429') ||
+                          error?.message?.includes('RESOURCE_EXHAUSTED') ||
+                          error?.message?.includes('quota');
+
+      // Check if it's a retryable error
+      const isRetryable = isRateLimit ||
+                          error?.message?.includes('500') ||
+                          error?.message?.includes('503');
+
+      if (!isRetryable || attempt === maxRetries) {
+        console.error(`[adkClient] ${context} failed after ${attempt + 1} attempts:`, error?.message);
+        throw error;
+      }
+
+      // Calculate delay with exponential backoff
+      const delay = Math.min(
+        RETRY_CONFIG.baseDelayMs * Math.pow(2, attempt),
+        RETRY_CONFIG.maxDelayMs
+      );
+
+      // Add jitter for rate limits
+      const jitter = isRateLimit ? Math.random() * 2000 : 0;
+      const totalDelay = delay + jitter;
+
+      console.warn(`[adkClient] ${context} failed (attempt ${attempt + 1}), retrying in ${Math.round(totalDelay)}ms...`);
+      await sleep(totalDelay);
+    }
+  }
+
+  throw lastError;
+}
 
 /**
  * Fetch image from URL and convert to base64
@@ -118,9 +187,10 @@ async function fetchImageAsBase64(url: string): Promise<string> {
   }
 }
 
-const makeMockClient = (): LLMClient => ({
+const makeMockClient = (tier: ModelTier = 'flash'): LLMClient => ({
   isMock: true,
   model: "mock",
+  tier,
   async generate(prompt: string) {
     // Lightweight mock: echo a JSON-ish hint for agent parsers.
     if (prompt.includes("Fragment & Context Agent")) {
@@ -151,7 +221,7 @@ const makeMockClient = (): LLMClient => ({
       });
     }
     if (prompt.includes("Quadrant Piece Agent")) {
-      // Return STATEMENTS (陈述式), not questions
+      // Return STATEMENTS, not questions
       return JSON.stringify({
         pieces: [
           { mode: "EXPRESSION", text: "Calm confidence over excitement" },
@@ -213,42 +283,44 @@ const makeMockClient = (): LLMClient => ({
   },
 });
 
-export const createLLMClient = (): LLMClient => {
+/**
+ * Create an LLM client with a specific model tier
+ *
+ * @param tier - 'flash' for fast/cheap tasks, 'pro' for complex reasoning
+ */
+export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
   if (!apiKey) {
     console.warn('[adkClient] No API key found, using mock client');
-    return makeMockClient();
+    return makeMockClient(tier);
   }
 
-  console.log(`[adkClient] Initializing with model: ${defaultModel}`);
+  const model = MODELS[tier];
+  console.log(`[adkClient] Initializing ${tier} client with model: ${model}`);
   const genAI = new GoogleGenAI({ apiKey });
 
   return {
     isMock: false,
-    model: defaultModel,
+    model,
+    tier,
 
     /**
      * Generate text response from text-only prompt
      */
     async generate(prompt: string, temperature = DEFAULT_TEMPERATURE) {
-      const res = await genAI.models.generateContent({
-        model: defaultModel,
-        contents: prompt,
-        config: {
-          temperature,
-          // Gemini 3 thinking level: 'low' for faster/cheaper, 'high' for more reasoning
-          // thinkingConfig: { thinkingLevel: 'high' },
-        },
-      });
-      return cleanText(res.text);
+      return withRetry(async () => {
+        const res = await genAI.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature,
+          },
+        });
+        return cleanText(res.text);
+      }, `generate(${tier})`);
     },
 
     /**
      * Generate text response from text + images (Vision Language Model)
-     * This enables actual image analysis, not just URL references
-     *
-     * @param prompt - Text prompt describing what to analyze
-     * @param images - Array of images to analyze
-     * @param temperature - Generation temperature (default 1.0 for Gemini 3)
      */
     async generateWithImages(
       prompt: string,
@@ -256,106 +328,98 @@ export const createLLMClient = (): LLMClient => {
       temperature = DEFAULT_TEMPERATURE
     ): Promise<string> {
       if (images.length === 0) {
-        // No images, fall back to text-only
         return this.generate(prompt, temperature);
       }
 
-      // Build multimodal content parts
-      const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+      return withRetry(async () => {
+        // Build multimodal content parts
+        const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+        parts.push({ text: prompt });
 
-      // Add text prompt first
-      parts.push({ text: prompt });
+        // Add each image
+        for (const img of images) {
+          let base64Data: string;
 
-      // Add each image
-      for (const img of images) {
-        let base64Data: string;
-
-        if (img.base64Data) {
-          // Already have base64 data
-          base64Data = img.base64Data;
-        } else if (img.url) {
-          // Fetch from URL and convert to base64
-          try {
-            base64Data = await fetchImageAsBase64(img.url);
-          } catch (error) {
-            console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+          if (img.base64Data) {
+            base64Data = img.base64Data;
+          } else if (img.url) {
+            try {
+              base64Data = await fetchImageAsBase64(img.url);
+            } catch (error) {
+              console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+              continue;
+            }
+          } else {
+            console.warn('[adkClient] Image input missing both url and base64Data, skipping');
             continue;
           }
-        } else {
-          console.warn('[adkClient] Image input missing both url and base64Data, skipping');
-          continue;
+
+          parts.push({
+            inlineData: {
+              mimeType: img.mimeType,
+              data: base64Data,
+            },
+          });
         }
 
-        parts.push({
-          inlineData: {
-            mimeType: img.mimeType,
-            data: base64Data,
+        // If all images failed, fall back to text-only
+        if (parts.length === 1) {
+          console.warn('[adkClient] All images failed to load, falling back to text-only');
+          const res = await genAI.models.generateContent({
+            model,
+            contents: prompt,
+            config: { temperature },
+          });
+          return cleanText(res.text);
+        }
+
+        console.log(`[adkClient] Generating with ${parts.length - 1} image(s) using ${tier}`);
+
+        const res = await genAI.models.generateContent({
+          model,
+          contents: parts,
+          config: {
+            temperature,
           },
         });
-      }
 
-      // If all images failed, fall back to text-only
-      if (parts.length === 1) {
-        console.warn('[adkClient] All images failed to load, falling back to text-only');
-        return this.generate(prompt, temperature);
-      }
-
-      console.log(`[adkClient] Generating with ${parts.length - 1} image(s)`);
-
-      const res = await genAI.models.generateContent({
-        model: defaultModel,
-        contents: parts,
-        config: {
-          temperature,
-        },
-      });
-
-      return cleanText(res.text);
+        return cleanText(res.text);
+      }, `generateWithImages(${tier})`);
     },
 
     /**
      * Generate structured JSON response with guaranteed schema conformance
-     * Uses Gemini's built-in JSON mode for reliable parsing
-     * See: https://ai.google.dev/gemini-api/docs/structured-output
-     *
-     * @param prompt - Text prompt describing what to generate
-     * @param schema - JSON Schema describing expected output structure
-     * @param temperature - Generation temperature (default 1.0)
      */
     async generateStructured<T>(
       prompt: string,
       schema: JsonSchema,
       temperature = DEFAULT_TEMPERATURE
     ): Promise<T> {
-      console.log(`[adkClient] Generating structured output with schema type: ${schema.type}`);
+      return withRetry(async () => {
+        console.log(`[adkClient] Generating structured output (${tier}) with schema type: ${schema.type}`);
 
-      const res = await genAI.models.generateContent({
-        model: defaultModel,
-        contents: prompt,
-        config: {
-          temperature,
-          responseMimeType: "application/json",
-          responseSchema: schema as any,
-        },
-      });
+        const res = await genAI.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature,
+            responseMimeType: "application/json",
+            responseSchema: schema as any,
+          },
+        });
 
-      const text = cleanText(res.text);
-      try {
-        return JSON.parse(text) as T;
-      } catch (error) {
-        console.error('[adkClient] Failed to parse structured output:', text);
-        throw new Error(`Structured output parsing failed: ${error}`);
-      }
+        const text = cleanText(res.text);
+        try {
+          return JSON.parse(text) as T;
+        } catch (error) {
+          console.error('[adkClient] Failed to parse structured output:', text);
+          throw new Error(`Structured output parsing failed: ${error}`);
+        }
+      }, `generateStructured(${tier})`);
     },
 
     /**
      * Generate structured JSON response from text + images (VLM)
-     * Combines vision analysis with structured output for reliable parsing
-     *
-     * @param prompt - Text prompt describing what to analyze
-     * @param images - Array of images to analyze
-     * @param schema - JSON Schema describing expected output structure
-     * @param temperature - Generation temperature (default 1.0)
      */
     async generateStructuredWithImages<T>(
       prompt: string,
@@ -364,67 +428,87 @@ export const createLLMClient = (): LLMClient => {
       temperature = DEFAULT_TEMPERATURE
     ): Promise<T> {
       if (images.length === 0) {
-        // No images, fall back to text-only structured
         return this.generateStructured(prompt, schema, temperature) as Promise<T>;
       }
 
-      // Build multimodal content parts
-      const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+      return withRetry(async () => {
+        // Build multimodal content parts
+        const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+        parts.push({ text: prompt });
 
-      // Add text prompt first
-      parts.push({ text: prompt });
+        // Add each image
+        for (const img of images) {
+          let base64Data: string;
 
-      // Add each image
-      for (const img of images) {
-        let base64Data: string;
-
-        if (img.base64Data) {
-          base64Data = img.base64Data;
-        } else if (img.url) {
-          try {
-            base64Data = await fetchImageAsBase64(img.url);
-          } catch (error) {
-            console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+          if (img.base64Data) {
+            base64Data = img.base64Data;
+          } else if (img.url) {
+            try {
+              base64Data = await fetchImageAsBase64(img.url);
+            } catch (error) {
+              console.error(`[adkClient] Skipping image due to fetch error: ${img.url}`);
+              continue;
+            }
+          } else {
+            console.warn('[adkClient] Image input missing both url and base64Data, skipping');
             continue;
           }
-        } else {
-          console.warn('[adkClient] Image input missing both url and base64Data, skipping');
-          continue;
+
+          parts.push({
+            inlineData: {
+              mimeType: img.mimeType,
+              data: base64Data,
+            },
+          });
         }
 
-        parts.push({
-          inlineData: {
-            mimeType: img.mimeType,
-            data: base64Data,
+        // If all images failed, fall back to text-only structured
+        if (parts.length === 1) {
+          console.warn('[adkClient] All images failed to load, falling back to text-only structured');
+          const res = await genAI.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              temperature,
+              responseMimeType: "application/json",
+              responseSchema: schema as any,
+            },
+          });
+          const text = cleanText(res.text);
+          return JSON.parse(text) as T;
+        }
+
+        console.log(`[adkClient] Generating structured output with ${parts.length - 1} image(s) using ${tier}`);
+
+        const res = await genAI.models.generateContent({
+          model,
+          contents: parts,
+          config: {
+            temperature,
+            responseMimeType: "application/json",
+            responseSchema: schema as any,
           },
         });
-      }
 
-      // If all images failed, fall back to text-only structured
-      if (parts.length === 1) {
-        console.warn('[adkClient] All images failed to load, falling back to text-only structured');
-        return this.generateStructured(prompt, schema, temperature) as Promise<T>;
-      }
-
-      console.log(`[adkClient] Generating structured output with ${parts.length - 1} image(s)`);
-
-      const res = await genAI.models.generateContent({
-        model: defaultModel,
-        contents: parts,
-        config: {
-          temperature,
-          responseMimeType: "application/json",
-          responseSchema: schema as any,
-        },
-      });
-
-      const text = cleanText(res.text);
-      try {
-        return JSON.parse(text) as T;
-      } catch (error) {
-        console.error('[adkClient] Failed to parse structured VLM output:', text);
-        throw new Error(`Structured VLM output parsing failed: ${error}`);
-      }
+        const text = cleanText(res.text);
+        try {
+          return JSON.parse(text) as T;
+        } catch (error) {
+          console.error('[adkClient] Failed to parse structured VLM output:', text);
+          throw new Error(`Structured VLM output parsing failed: ${error}`);
+        }
+      }, `generateStructuredWithImages(${tier})`);
     },
   };
 };
+
+/**
+ * Convenience functions to create clients for different tiers
+ */
+export const createFlashClient = () => createLLMClient('flash');
+export const createProClient = () => createLLMClient('pro');
+
+/**
+ * Default client (flash for speed)
+ */
+export const defaultClient = createLLMClient('flash');

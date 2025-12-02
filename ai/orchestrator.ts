@@ -1,6 +1,6 @@
 import { ContextStore } from "../store/contextStore";
 import { EventBus } from "../store/eventBus";
-import { createLLMClient } from "./adkClient";
+import { createLLMClient, createFlashClient, createProClient, LLMClient } from "./adkClient";
 import { runFragmentContextAgent } from "./agents/fragmentContextAgent";
 // ADK Mascot Agent (entry point) - migrated to ADK
 import { runMascotSelf, runMascotSuggest } from "./adk/agents/mascotAgent";
@@ -115,7 +115,15 @@ const sanitizeMascotRationale = (
 
 export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   console.log('[orchestrator] Attaching orchestrator to eventBus...');
-  const client = createLLMClient();
+
+  // Tiered client system:
+  // - flashClient: Fast/cheap for most tasks (feature extraction, piece generation, mascot)
+  // - proClient: Complex reasoning (synthesis, central question generation)
+  const flashClient = createFlashClient();
+  const proClient = createProClient();
+  const client = flashClient; // Default to flash for backward compatibility
+
+  console.log(`[orchestrator] Using tiered models: flash=${flashClient.model}, pro=${proClient.model}`);
 
   const handleFragmentBurst = async () => {
     const state = store.getState();
@@ -296,8 +304,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         placedPieces,
       };
 
-      // Run ADK synthesis agent
-      const summary = await runSynthesisAgent(synthesisInput, client);
+      // Run ADK synthesis agent (use proClient for complex reasoning)
+      const summary = await runSynthesisAgent(synthesisInput, proClient);
 
       // Store summary
       store.setState(draft => {
