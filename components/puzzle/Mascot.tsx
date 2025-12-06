@@ -16,9 +16,6 @@ export const Mascot: React.FC = () => {
           ease: "easeInOut"
         }}
       >
-        {/* Glow behind */}
-        <div className="absolute inset-0 bg-purple-500/20 blur-xl rounded-full" />
-
         {/* Mascot SVG */}
         <img
           src="/mascot-design.svg"

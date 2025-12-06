@@ -24,10 +24,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      {/* Top Blue Status Bar */}
-      <div className="absolute top-0 left-0 w-full h-1.5 bg-[#3B82F6] z-30"></div>
-
-      <div className="absolute top-0 left-0 w-full z-20 px-6 py-4 pt-6 flex items-center justify-between pointer-events-none">
+      <div className="absolute top-0 left-0 w-full z-20 px-6 py-4 flex items-center justify-between pointer-events-none">
 
         {/* Left: Logo & Input */}
         <div className="flex items-center gap-6 pointer-events-auto">
@@ -42,9 +39,9 @@ export const TopBar: React.FC<TopBarProps> = ({
               type="text"
               value={aim}
               onChange={(e) => setAim(e.target.value)}
-              className={`w-full bg-transparent backdrop-blur-sm border rounded-lg px-4 py-2 pr-10 text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/20 shadow-sm font-medium transition-all text-sm ${isEmpty
+              className={`w-full bg-transparent backdrop-blur-sm border-2 rounded-lg px-4 py-2 pr-10 text-gray-800 placeholder-gray-300 focus:outline-none focus:ring-0 shadow-sm font-medium transition-colors text-sm ${isEmpty
                 ? 'border-yellow-400 focus:border-yellow-500'
-                : 'border-gray-200 focus:border-[#3B82F6]'
+                : 'border-gray-200 focus:border-purple-200'
                 }`}
               placeholder="Write your project brief here"
             />

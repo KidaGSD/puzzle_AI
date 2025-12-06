@@ -10,6 +10,7 @@ interface MascotButtonProps {
  */
 export function MascotButton({ onClick }: MascotButtonProps) {
   const [showBubble, setShowBubble] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   // Show a hint bubble occasionally
   useEffect(() => {
@@ -22,8 +23,16 @@ export function MascotButton({ onClick }: MascotButtonProps) {
     return () => clearTimeout(timer);
   }, []);
 
+  const handleMouseEnter = () => {
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+  };
+
   return (
-    <div className="fixed left-6 bottom-28 z-[1000] flex flex-col items-start pointer-events-none">
+    <div className="fixed left-8 bottom-8 z-[1000] flex flex-col items-start pointer-events-none">
       {/* Conversational Bubble - positioned to the right of mascot */}
       <div
         className={`
@@ -42,19 +51,27 @@ export function MascotButton({ onClick }: MascotButtonProps) {
       {/* Mascot Button */}
       <button
         onClick={onClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className="mascot-button pointer-events-auto group relative"
         title="Ask AI for help"
         aria-label="Open AI assistant"
       >
-        {/* Glow effect */}
-        <div className="absolute inset-0 bg-purple-400 rounded-full blur-lg opacity-20 group-hover:opacity-40 transition-opacity duration-300 animate-pulse"></div>
-
         {/* Mascot Image */}
         <img
-          src="/mascot-design.svg"
+          src={isHovered ? "/mascot-hovered.png" : "/mascot-design.svg"}
           alt="Mascot"
-          className="w-14 h-14 object-contain drop-shadow-md transform transition-transform duration-300 group-hover:scale-110 group-active:scale-95 animate-float"
+          className="w-20 h-20 object-contain drop-shadow-md transform transition-transform duration-300 group-hover:scale-110 group-active:scale-95 animate-float"
         />
+
+        {/* Click Me Text - Shows on Hover */}
+        <div
+          className={`absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-sm font-bold text-[#1C1C1C] transition-all duration-200 ${
+            isHovered ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1'
+          }`}
+        >
+          Click Me!
+        </div>
       </button>
 
       <style>{`

@@ -416,7 +416,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                 style={{ backgroundColor: priorityColor + '20' }}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sequentialColor }} />
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: sequentialColor }} />
                                     <span className="text-white font-semibold text-sm">
                                         {isLoadingContent ? 'Generating...' : (pendingContent?.title || currentLabel)}
                                     </span>
@@ -484,12 +484,9 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 <div className="relative group" ref={buttonRef}>
                     {/* Main spawner button */}
                     <div
-                        className="w-24 h-10 rounded-xl shadow-md flex items-center justify-center px-3 transition-all duration-200"
+                        className="w-24 h-10 rounded-xl flex items-center justify-center px-3 transition-all duration-200 group-hover:!bg-[#000000]"
                         style={{
                             backgroundColor: color,
-                            boxShadow: isDragging
-                                ? '0 0 0 2px rgba(255,255,255,0.6), 0 10px 25px rgba(0,0,0,0.35)'
-                                : '0 0 0 1px rgba(17,24,39,0.06), 0 8px 20px rgba(0,0,0,0.25)',
                             transform: isDragging ? 'translateY(2px) scale(0.98)' : 'translateY(0) scale(1)',
                         }}
                     >

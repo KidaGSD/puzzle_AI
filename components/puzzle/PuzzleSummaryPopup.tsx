@@ -70,7 +70,7 @@ export const PuzzleSummaryPopup: React.FC<PuzzleSummaryPopupProps> = ({
           style={{ backgroundColor: colors.bg }}
         >
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center"
+            className="w-10 h-10 rounded-lg flex items-center justify-center"
             style={{ backgroundColor: colors.border }}
           >
             <CheckCircle size={24} className="text-white" />
@@ -85,7 +85,7 @@ export const PuzzleSummaryPopup: React.FC<PuzzleSummaryPopupProps> = ({
           </div>
           <button
             onClick={handleClose}
-            className="p-1 rounded-full hover:bg-black/5 transition-colors"
+            className="p-1 rounded-md hover:bg-black/5 transition-colors"
           >
             <X size={20} className="text-gray-400" />
           </button>
@@ -120,7 +120,7 @@ export const PuzzleSummaryPopup: React.FC<PuzzleSummaryPopupProps> = ({
                 {summary.reasons.slice(0, 5).map((reason, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
                     <div
-                      className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+                      className="w-1.5 h-1.5 rounded-sm mt-1.5 shrink-0"
                       style={{ backgroundColor: colors.border }}
                     />
                     {reason}
@@ -152,7 +152,7 @@ export const PuzzleSummaryPopup: React.FC<PuzzleSummaryPopupProps> = ({
               {summary.tags.slice(0, 5).map((tag, i) => (
                 <span
                   key={i}
-                  className="px-2 py-0.5 text-xs font-medium rounded-full"
+                  className="px-2 py-0.5 text-xs font-medium rounded-md"
                   style={{
                     backgroundColor: colors.bg,
                     color: colors.accent,

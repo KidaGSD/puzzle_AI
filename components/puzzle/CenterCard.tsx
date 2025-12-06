@@ -46,7 +46,7 @@ export const CenterCard: React.FC<CenterCardProps> = ({
     >
       {/* Puzzle Type Badge */}
       <div
-        className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-3"
+        className="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider mb-3"
         style={{
           backgroundColor: typeStyle.bgColor,
           color: typeStyle.color,

@@ -45,15 +45,17 @@ const SummaryHoverPopup: React.FC<SummaryHoverPopupProps> = ({ summary, puzzleTy
 
   return (
     <div
-      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg shadow-xl p-3 w-[220px] z-[100] pointer-events-none"
+      className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white rounded-lg p-3 w-[220px] z-[100] pointer-events-none"
       style={{
         animation: 'fadeInUp 0.2s ease-out',
+        border: '1px solid #D6D6D6',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.15), 0 4px 10px rgba(0,0,0,0.1)',
       }}
     >
       {/* Header */}
       <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100">
         <div
-          className="w-6 h-6 rounded-full flex items-center justify-center"
+          className="w-6 h-6 rounded-md flex items-center justify-center"
           style={{ backgroundColor: typeConfig.bgColor }}
         >
           <CheckCircle2 size={14} style={{ color: typeConfig.color }} />
@@ -73,7 +75,7 @@ const SummaryHoverPopup: React.FC<SummaryHoverPopupProps> = ({ summary, puzzleTy
           {summary.reasons.slice(0, 2).map((reason, i) => (
             <div key={i} className="flex items-start gap-1.5 text-[10px] text-gray-500">
               <div
-                className="w-1 h-1 rounded-full mt-1.5 shrink-0"
+                className="w-1 h-1 rounded-sm mt-1.5 shrink-0"
                 style={{ backgroundColor: typeConfig.color }}
               />
               <span className="line-clamp-1">{reason}</span>
@@ -185,7 +187,7 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                   <div className="h-auto w-full relative overflow-hidden shrink-0 border-b border-gray-100">
                     <div className="absolute inset-0 opacity-20" style={{ backgroundColor: getPuzzleTypeStyle(puzzle.type).color }}></div>
 
-                    <div className="relative z-10 p-3 pb-2">
+                    <div className="relative z-10 p-3 pb-2 flex items-center justify-between gap-2">
                       <div
                         className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded text-white shadow-sm"
                         style={{ backgroundColor: getPuzzleTypeStyle(puzzle.type).color }}
@@ -193,6 +195,12 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                         {getPuzzleTypeStyle(puzzle.type).icon}
                         {getPuzzleTypeStyle(puzzle.type).label}
                       </div>
+
+                      {isFinished && (
+                        <div className="flex items-center text-emerald-600">
+                          <CheckCircle2 size={14} />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -203,8 +211,8 @@ export const PuzzleDeck: React.FC<PuzzleDeckProps> = ({ activeLeverId, puzzles, 
                     </h3>
 
                     {isFinished && (
-                      <div className="mt-auto flex items-center gap-1 text-[10px] text-emerald-600 font-bold uppercase tracking-wide">
-                        <CheckCircle2 size={12} /> Finished
+                      <div className="mt-auto text-[10px] text-emerald-600 font-bold uppercase tracking-wide">
+                        Finished
                       </div>
                     )}
                   </div>

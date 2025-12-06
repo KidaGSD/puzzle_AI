@@ -388,7 +388,7 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
                 style={{ backgroundColor: data.color + '20' }}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: data.color }} />
+                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: data.color }} />
                   <span className="text-white font-semibold text-sm truncate">
                     {displayTitle || 'Untitled'}
                   </span>
@@ -550,7 +550,7 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
               onClick={handleDelete}
-              className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors z-50"
+              className="absolute -top-2 -right-2 w-6 h-6 rounded-md bg-red-500 text-white flex items-center justify-center shadow-lg hover:bg-red-600 transition-colors z-50"
               title="Delete piece"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">

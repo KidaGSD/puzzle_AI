@@ -114,15 +114,20 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   return (
     <div
       ref={ref}
-      className="absolute flex flex-col rounded-lg group bg-white cursor-move"
+      className="absolute flex flex-col rounded-lg group cursor-move"
       style={{
-        transform: `translate(${data.position.x}px, ${data.position.y}px)`,
+        transform: `translate(${data.position.x}px, ${data.position.y}px) ${isSelected ? 'rotateX(1deg)' : 'rotateX(0deg)'}`,
+        transformStyle: 'preserve-3d',
         width: data.size.width || 320,
         height: 'auto',
         maxHeight: hasFixedHeight ? undefined : '80vh', // Prevent extremely tall fragments
-        boxShadow: 'none',
-        border: isSelected ? '1px solid #000000' : '1px solid #D6D6D6',
-        zIndex: isSelected ? 100 : data.zIndex,
+        background: 'linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.98) 100%)',
+        boxShadow: isSelected
+          ? '0 20px 40px rgba(0,0,0,0.2), 0 8px 16px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)'
+          : '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)',
+        border: '1px solid #D6D6D6',
+        borderTop: '1px solid rgba(255,255,255,0.8)',
+        zIndex: data.zIndex,
         overflow: hasFixedHeight ? 'hidden' : 'visible', // Changed: visible for auto-height
       }}
       onMouseDown={(e) => onMouseDown(e, data.id)}
@@ -197,7 +202,7 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                   onChange={(e) => setLocalTitle(e.target.value)}
                   onKeyDown={handleTitleKeyDown}
                   onBlur={handleTitleSave}
-                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border border-blue-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border-2 border-gray-200 focus:border-purple-200 rounded px-2 py-1 focus:outline-none focus:ring-0 shadow-sm transition-colors"
                   placeholder="Fragment title..."
                   onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -262,7 +267,7 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                   onChange={(e) => setLocalTitle(e.target.value)}
                   onKeyDown={handleTitleKeyDown}
                   onBlur={handleTitleSave}
-                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border border-blue-400 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border-2 border-gray-200 focus:border-purple-200 rounded px-2 py-1 focus:outline-none focus:ring-0 shadow-sm transition-colors"
                   placeholder="Fragment title..."
                   onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -340,7 +345,7 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                   return (
                     <span
                       key={puzzleId}
-                      className="w-3 h-3 rounded-full border-2"
+                      className="w-3 h-3 rounded-sm border-2"
                       style={{
                         backgroundColor: colors.bg,
                         borderColor: colors.border,

@@ -18,6 +18,7 @@ import { Fragment as DomainFragment, PuzzleSummary } from '../domain/models';
 import { MascotButton } from '../components/mascot/MascotButton';
 import { MascotPanel } from '../components/mascot/MascotPanel';
 import { MascotProposal } from '../ai/agents/mascotAgent';
+import { PuzzleSummaryPopup } from '../components/puzzle/PuzzleSummaryPopup';
 import { WelcomeOverlay } from '../components/onboarding/WelcomeOverlay';
 // import { ZoomControls } from '../components/canvas/ZoomControls';
 
@@ -140,6 +141,9 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   // Mascot State
   const [isMascotOpen, setIsMascotOpen] = useState(false);
   const [mascotProposal, setMascotProposal] = useState<MascotProposal | null>(null);
+
+  // Summary Popup State
+  const [selectedFinishedPuzzle, setSelectedFinishedPuzzle] = useState<{ puzzle: Puzzle; summary: any } | null>(null);
 
   // Onboarding State
   const [showOnboarding, setShowOnboarding] = useState(
@@ -326,6 +330,9 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   const handleFragmentMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (activeTool === ToolType.POINTER) {
+      // Calculate max zIndex and update the clicked fragment to be on top
+      const maxZ = Math.max(100, ...fragments.map(f => f.zIndex));
+      setFragments(prev => prev.map(f => f.id === id ? { ...f, zIndex: maxZ + 1 } : f));
       setInteractionMode('DRAG_FRAGMENT');
       setActiveId(id);
       setSelection(id);
@@ -355,8 +362,6 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
         } else {
           draggedChildrenRef.current = [];
           initialChildrenDataRef.current.clear();
-          const maxZ = Math.max(100, ...fragments.map(p => p.zIndex));
-          setFragments(prev => prev.map(f => f.id === id ? { ...f, zIndex: maxZ + 1 } : f));
         }
 
         if (frag.leverId) setActiveLeverId(frag.leverId);
@@ -467,7 +472,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
       id,
       type,
       position: { x, y },
-      size: sizeOverride || (type === FragmentType.TEXT ? { width: 200, height: 100 } : { width: 200, height: 200 }),
+      size: sizeOverride || (type === FragmentType.TEXT ? { width: 320, height: 160 } : { width: 320, height: 160 }),
       content: contentOverride || (type === FragmentType.TEXT ? "" : type === FragmentType.IMAGE ? "https://picsum.photos/200/200" : ""),
       title: type === FragmentType.FRAME ? "New Frame" : undefined,
       zIndex: type === FragmentType.FRAME ? 0 : fragments.length + 1
@@ -524,10 +529,10 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
 
   // Handle puzzle card click - navigate to puzzle session
   const handleSelectPuzzle = (puzzle: Puzzle) => {
-    const isFinished = puzzleSummaries.some(s => s.puzzleId === puzzle.id);
-    if (isFinished) {
+    const summary = puzzleSummaries.find(s => s.puzzleId === puzzle.id);
+    if (summary) {
       addLog(`Viewing finished puzzle: ${puzzle.title.slice(0, 20)}...`);
-      // TODO: Could show expanded summary here
+      setSelectedFinishedPuzzle({ puzzle, summary });
     } else {
       addLog(`Entering puzzle: ${puzzle.title.slice(0, 20)}...`);
       onEnterPuzzle(puzzle.id);
@@ -643,8 +648,17 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
           If user wants summary on canvas, they can use "Add to Canvas" action from deck.
       */}
 
+      {/* Finished Puzzle Summary Popup */}
+      {selectedFinishedPuzzle && (
+        <PuzzleSummaryPopup
+          summary={selectedFinishedPuzzle.summary}
+          puzzleType={selectedFinishedPuzzle.puzzle.type?.toUpperCase() as PuzzleSessionType}
+          onClose={() => setSelectedFinishedPuzzle(null)}
+        />
+      )}
+
       {/* Hint for Controls */}
-      <div className="absolute bottom-4 right-4 z-40 text-[#A09C94] text-xs font-mono bg-[#F5F1E8]/80 p-2 rounded pointer-events-none">
+      <div className="absolute bottom-4 right-4 z-40 text-gray-500 text-xs font-mono bg-purple-50/80 backdrop-blur-sm p-2 rounded pointer-events-none">
         Middle Click / Space+Drag to Pan | Scroll to Zoom | Click puzzle card to enter
       </div>
 

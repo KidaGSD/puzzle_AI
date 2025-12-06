@@ -78,7 +78,7 @@ export const Board: React.FC<BoardProps> = ({
         <div className="pointer-events-auto flex space-x-2">
           <button
             onClick={onEndPuzzle}
-            className="bg-gray-900 text-white px-4 py-2 rounded-lg font-medium shadow-lg hover:bg-gray-800 transition-colors"
+            className="bg-white/90 backdrop-blur-sm text-gray-800 px-4 py-2 rounded-lg font-medium shadow-sm border border-gray-200 hover:bg-black hover:text-white hover:border-black transition-all"
           >
             End this Puzzle
           </button>

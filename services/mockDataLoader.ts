@@ -184,6 +184,7 @@ export const getRandomImageFragments = (
 ): Fragment[] => {
   const shuffled = shuffleArray(MOCK_IMAGES);
   const selected = shuffled.slice(0, Math.min(count, MOCK_IMAGES.length));
+  const levers = ['L1', 'L2', 'L3']; // Available lever IDs
 
   return selected.map((filename, index) => {
     // Get metadata for this image, with fallback for unknown files
@@ -191,6 +192,9 @@ export const getRandomImageFragments = (
       title: `Image Reference ${index + 1}`,
       description: "Visual reference for design exploration",
     };
+
+    // Randomly assign to a lever
+    const randomLever = levers[Math.floor(Math.random() * levers.length)];
 
     return {
       id: generateId(),
@@ -200,8 +204,8 @@ export const getRandomImageFragments = (
       summary: metadata.description, // Use description, NOT file path
       content: `/MockupFragments/${filename}`, // Keep file path only in content
       position: getRandomPosition(index, count),
-      size: { width: 200, height: 150 },
-      labels: [],
+      size: { width: 320, height: 150 },
+      labels: [randomLever],
       tags: [], // Don't auto-generate tags from filename
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -214,19 +218,26 @@ export const getRandomImageFragments = (
  * @param projectId Project ID for the fragments
  */
 export const getTextFragments = (projectId: string): Fragment[] => {
-  return TEXT_FRAGMENT_SECTIONS.map((section, index) => ({
-    id: generateId(),
-    projectId,
-    type: "TEXT" as FragmentType,
-    title: section.title, // Use section title as fragment title
-    content: section.content, // Just the content without title embedded
-    position: getRandomPosition(index, TEXT_FRAGMENT_SECTIONS.length, 1200, 800),
-    size: { width: 280, height: 180 },
-    labels: [],
-    tags: [section.title.toLowerCase().replace(/\s+/g, "-")],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  }));
+  const levers = ['L1', 'L2', 'L3']; // Available lever IDs
+
+  return TEXT_FRAGMENT_SECTIONS.map((section, index) => {
+    // Randomly assign to a lever
+    const randomLever = levers[Math.floor(Math.random() * levers.length)];
+
+    return {
+      id: generateId(),
+      projectId,
+      type: "TEXT" as FragmentType,
+      title: section.title, // Use section title as fragment title
+      content: section.content, // Just the content without title embedded
+      position: getRandomPosition(index, TEXT_FRAGMENT_SECTIONS.length, 1200, 800),
+      size: { width: 320, height: 180 },
+      labels: [randomLever],
+      tags: [section.title.toLowerCase().replace(/\s+/g, "-")],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+  });
 };
 
 /**
