@@ -1,6 +1,7 @@
 import React from 'react';
-import { MousePointer2, Type, Image as ImageIcon, BoxSelect } from 'lucide-react';
+import { MousePointer2, Type, Image as ImageIcon, BoxSelect, Database, DatabaseZap } from 'lucide-react';
 import { ToolType } from '../types';
+import { useSettingsStore } from '../store/settingsStore';
 
 interface ToolbarProps {
   activeTool: ToolType;
@@ -12,6 +13,8 @@ interface ToolbarProps {
  * AI interaction is now handled by the Mascot button below.
  */
 export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) => {
+  const { isMockMode, toggleMockMode } = useSettingsStore();
+
   const tools = [
     { id: ToolType.POINTER, icon: MousePointer2, label: 'Select' },
     { id: ToolType.TEXT, icon: Type, label: 'Note' },
@@ -21,6 +24,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) =>
 
   return (
     <div className="absolute left-6 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-6">
+      {/* Main tools */}
       <div
         className="flex flex-col bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] p-2 gap-2"
       >
@@ -50,6 +54,36 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) =>
             </button>
           );
         })}
+      </div>
+
+      {/* Mock Mode Toggle */}
+      <div
+        className="flex flex-col bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] p-2"
+      >
+        <button
+          onClick={toggleMockMode}
+          className={`
+            p-3.5 rounded-xl transition-all duration-200 relative group
+            ${isMockMode
+              ? 'bg-amber-500 text-white shadow-lg'
+              : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+            }
+          `}
+          title={isMockMode ? 'Mock Mode: ON' : 'Mock Mode: OFF'}
+        >
+          {isMockMode ? (
+            <DatabaseZap size={20} strokeWidth={2} />
+          ) : (
+            <Database size={20} strokeWidth={2} />
+          )}
+
+          {/* Tooltip */}
+          <span className="absolute left-full ml-4 px-3 py-1.5 bg-[#262626] text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-xl translate-x-2 group-hover:translate-x-0 duration-200">
+            {isMockMode ? 'Mock Mode: ON' : 'Mock Mode: OFF'}
+            {/* Arrow */}
+            <span className="absolute top-1/2 -left-1 -translate-y-1/2 border-4 border-transparent border-r-[#262626]"></span>
+          </span>
+        </button>
       </div>
     </div>
   );

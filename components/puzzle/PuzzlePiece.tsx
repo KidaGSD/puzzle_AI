@@ -557,9 +557,17 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
           style={{ filter: isDragging ? 'drop-shadow(0 10px 20px rgba(0,0,0,0.3))' : 'drop-shadow(0 4px 12px rgba(0,0,0,0.15))' }}
         >
           <defs>
+            {/* Glass morphism gradient - more transparent for frosted glass effect */}
             <linearGradient id={`grad-${data.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={fillColor} stopOpacity="1" />
-              <stop offset="100%" stopColor={fillColor} stopOpacity="0.85" />
+              <stop offset="0%" stopColor={fillColor} stopOpacity="0.85" />
+              <stop offset="50%" stopColor={fillColor} stopOpacity="0.7" />
+              <stop offset="100%" stopColor={fillColor} stopOpacity="0.8" />
+            </linearGradient>
+            {/* Inner glow for glass effect */}
+            <linearGradient id={`glass-${data.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="white" stopOpacity="0.3" />
+              <stop offset="50%" stopColor="white" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="white" stopOpacity="0.1" />
             </linearGradient>
             <filter id={`glow-${data.id}`} x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="2" result="blur" />
@@ -567,6 +575,10 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
+            </filter>
+            {/* Glass blur filter for frosted effect */}
+            <filter id={`blur-${data.id}`} x="-10%" y="-10%" width="120%" height="120%">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="0.5" />
             </filter>
           </defs>
           {/* Fill all cells without stroke to avoid internal lines */}
@@ -576,12 +588,18 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
             stroke="none"
             filter={isHovered ? `url(#glow-${data.id})` : undefined}
           />
-          {/* Outer border - only on truly outer edges */}
+          {/* Glass overlay - inner highlight for glass effect */}
+          <path
+            d={shapePath}
+            fill={`url(#glass-${data.id})`}
+            stroke="none"
+          />
+          {/* Outer border - glass edge highlight */}
           <path
             d={shapePath}
             fill="none"
-            stroke={isHovered ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)'}
-            strokeWidth={isHovered ? 2 : 1.5}
+            stroke={isHovered ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)'}
+            strokeWidth={isHovered ? 1.5 : 1}
             style={{ paintOrder: 'stroke' }}
           />
         </svg>

@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
 import { Link2, Image as ImageIcon, Trash2, Maximize2, Sparkles } from 'lucide-react';
-import { contextStore } from '../store/runtime';
+import { usePuzzleSessionStateStore } from '../store/puzzleSessionStateStore';
 
 interface FragmentProps {
   data: FragmentData;
@@ -377,9 +377,10 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
 
         const validTags = (tags || []).filter(isValidTag);
 
-        // Get puzzle labels
-        const storeFragment = contextStore.getState().fragments.find(f => f.id === data.id);
-        const labels = storeFragment?.labels || [];
+        // Get current puzzle session type
+        const sessionState = usePuzzleSessionStateStore.getState().sessionState;
+        const currentPuzzleType = sessionState?.puzzle_type || null;
+
         const PUZZLE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
           CLARIFY: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
           EXPAND: { bg: '#FFEDD5', text: '#9A3412', border: '#F97316' },
@@ -388,28 +389,25 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
 
         return (
           <div className="px-4 pb-4 shrink-0">
-            {/* Puzzle Labels */}
-            {labels.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1">
-                {labels.map((puzzleId) => {
-                  const puzzle = contextStore.getState().puzzles.find(p => p.id === puzzleId);
-                  if (!puzzle) return null;
-
-                  const puzzleType = puzzle.type || 'CLARIFY';
-                  const colors = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
-
-                  return (
-                    <span
-                      key={puzzleId}
-                      className="w-3 h-3 rounded-sm border-2"
-                      style={{
-                        backgroundColor: colors.bg,
-                        borderColor: colors.border,
-                      }}
-                      title={`${puzzleType}: ${puzzle.centralQuestion}`}
-                    />
-                  );
-                })}
+            {/* Current Puzzle Session Indicator */}
+            {currentPuzzleType && (
+              <div className="mb-2 flex items-center gap-1.5">
+                <span
+                  className="w-3 h-3 rounded-sm border-2"
+                  style={{
+                    backgroundColor: PUZZLE_TYPE_COLORS[currentPuzzleType]?.bg || PUZZLE_TYPE_COLORS.CLARIFY.bg,
+                    borderColor: PUZZLE_TYPE_COLORS[currentPuzzleType]?.border || PUZZLE_TYPE_COLORS.CLARIFY.border,
+                  }}
+                  title={`Puzzle: ${currentPuzzleType}`}
+                />
+                <span
+                  className="text-[9px] font-bold uppercase tracking-wider"
+                  style={{
+                    color: PUZZLE_TYPE_COLORS[currentPuzzleType]?.text || PUZZLE_TYPE_COLORS.CLARIFY.text,
+                  }}
+                >
+                  {currentPuzzleType}
+                </span>
               </div>
             )}
 

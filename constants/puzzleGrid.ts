@@ -22,9 +22,9 @@ export const QUADRANTS = {
 };
 
 // Center card dimensions in grid units
-// 4×4 square for balanced layout
+// 4×2 wide and short for compact layout
 export const CENTER_CARD_WIDTH = 4;
-export const CENTER_CARD_HEIGHT = 4;
+export const CENTER_CARD_HEIGHT = 2;
 
 // Shapes 1-8 from the reference guide
 export const SHAPES = {

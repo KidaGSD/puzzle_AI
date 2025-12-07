@@ -20,7 +20,9 @@
       "Bash(timeout 30 npx tsc:*)",
       "WebFetch(domain:ai.google.dev)",
       "WebFetch(domain:github.com)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

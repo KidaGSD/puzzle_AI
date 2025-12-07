@@ -28,16 +28,15 @@ export const CenterCard: React.FC<CenterCardProps> = ({
   const height = CENTER_CARD_HEIGHT * CELL_SIZE;
   const accentColor = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
 
-  // Dynamic font size based on question length - optimized for 4x4 card (256x256px)
+  // Dynamic font size based on question length - optimized for 4x2 card (256x128px)
   const fontSize = useMemo(() => {
     const charCount = centralQuestion.length;
 
-    // More aggressive scaling for the square card
-    if (charCount <= 50) return '20px';
-    if (charCount <= 80) return '18px';
-    if (charCount <= 120) return '16px';
-    if (charCount <= 160) return '14px';
-    return '13px';
+    // More compact scaling for the shorter card
+    if (charCount <= 30) return '16px';
+    if (charCount <= 50) return '14px';
+    if (charCount <= 80) return '12px';
+    return '11px';
   }, [centralQuestion]);
 
   const handleClick = () => {
@@ -52,7 +51,7 @@ export const CenterCard: React.FC<CenterCardProps> = ({
     <>
       {/* Main Card - Clean design without badge */}
       <div
-        className="absolute rounded-xl flex flex-col items-center justify-center p-4 shadow-2xl transition-all duration-300 cursor-pointer group"
+        className="absolute rounded-xl flex flex-col items-center justify-center px-4 py-2 shadow-2xl transition-all duration-300 cursor-pointer group"
         style={{
           width: width,
           height: height,

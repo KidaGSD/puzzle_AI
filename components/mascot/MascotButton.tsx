@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { eventBus } from '../../store/runtime'
+import { usePuzzleSessionStateStore } from '../../store/puzzleSessionStateStore'
 
 // ========== Onboarding Configuration ==========
 
@@ -9,8 +10,18 @@ const ONBOARDING_MESSAGES = [
   "Keep adding, or click 'End Puzzle' for summary"            // Step 3
 ];
 
+// ========== Contextual Hints ==========
+const CONTEXTUAL_HINTS = {
+  REPLENISHING: "Generating more ideas...",
+  IDLE: "Try dragging a block?",
+  DELETED: "Removed? That's okay, keep exploring",
+  COMPLETED: "🎉 Summary generated!",
+  DEFAULT: "Stuck? Click me to start a thinking puzzle!",
+};
+
 const BUBBLE_AUTO_SHOW_DELAY = 3000;   // Show bubble 3s after component mounts
 const BUBBLE_AUTO_HIDE_DELAY = 5000;   // Hide bubble after 5s
+const IDLE_TIMEOUT = 30000;            // 30 seconds idle timeout
 const ONBOARDING_STORAGE_KEY = 'puzzle_mascot_onboarding_step';
 
 interface MascotButtonProps {
@@ -29,6 +40,13 @@ interface MascotButtonProps {
 export function MascotButton({ onClick }: MascotButtonProps) {
   const [showBubble, setShowBubble] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [contextualMessage, setContextualMessage] = useState<string | null>(null);
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hideTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get replenishing state from store
+  const replenishingQuadrants = usePuzzleSessionStateStore(state => state.replenishingQuadrants);
+  const isAnyReplenishing = replenishingQuadrants.size > 0;
 
   // Onboarding state
   const [onboardingStep, setOnboardingStep] = useState<number>(() => {
@@ -40,13 +58,45 @@ export function MascotButton({ onClick }: MascotButtonProps) {
     return step ? parseInt(step, 10) >= ONBOARDING_MESSAGES.length : false;
   });
 
+  // Show contextual hint temporarily
+  const showContextualHint = useCallback((message: string, duration: number = 3000) => {
+    setContextualMessage(message);
+    setShowBubble(true);
+
+    // Clear any existing hide timer
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+
+    hideTimerRef.current = setTimeout(() => {
+      setShowBubble(false);
+      setContextualMessage(null);
+    }, duration);
+  }, []);
+
+  // Reset idle timer
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = setTimeout(() => {
+      if (hasCompletedOnboarding) {
+        showContextualHint(CONTEXTUAL_HINTS.IDLE, 4000);
+      }
+    }, IDLE_TIMEOUT);
+  }, [hasCompletedOnboarding, showContextualHint]);
+
   // Get current bubble message
   const getBubbleMessage = useCallback((): string => {
+    // Contextual message takes priority
+    if (contextualMessage) {
+      return contextualMessage;
+    }
     if (hasCompletedOnboarding) {
-      return "Stuck? Click me to start a thinking puzzle!";
+      return CONTEXTUAL_HINTS.DEFAULT;
     }
     return ONBOARDING_MESSAGES[onboardingStep] || ONBOARDING_MESSAGES[0];
-  }, [hasCompletedOnboarding, onboardingStep]);
+  }, [hasCompletedOnboarding, onboardingStep, contextualMessage]);
 
   // Advance onboarding to next step
   const advanceOnboarding = useCallback(() => {
@@ -76,29 +126,55 @@ export function MascotButton({ onClick }: MascotButtonProps) {
     return () => clearTimeout(timer);
   }, []);
 
-  // Listen for piece placement events to advance onboarding
+  // Listen for events to advance onboarding and show contextual hints
   useEffect(() => {
-    if (hasCompletedOnboarding) return;
-
     let pieceCount = 0;
 
     const unsubscribe = eventBus.subscribe((event) => {
+      // Reset idle timer on any user activity
+      if (['PIECE_PLACED', 'PIECE_DELETED', 'PIECE_EDITED'].includes(event.type)) {
+        resetIdleTimer();
+      }
+
       if (event.type === 'PIECE_PLACED') {
         pieceCount++;
 
         // Advance onboarding based on piece count
-        if (pieceCount === 1 && onboardingStep === 0) {
-          // First piece placed - show step 2
-          advanceOnboarding();
-        } else if (pieceCount === 3 && onboardingStep === 1) {
-          // Three pieces placed - show step 3
-          advanceOnboarding();
+        if (!hasCompletedOnboarding) {
+          if (pieceCount === 1 && onboardingStep === 0) {
+            advanceOnboarding();
+          } else if (pieceCount === 3 && onboardingStep === 1) {
+            advanceOnboarding();
+          }
         }
+      }
+
+      // Show contextual hints for various events
+      if (event.type === 'PIECE_DELETED' && hasCompletedOnboarding) {
+        showContextualHint(CONTEXTUAL_HINTS.DELETED, 2000);
+      }
+
+      if (event.type === 'PUZZLE_SESSION_COMPLETED' && hasCompletedOnboarding) {
+        showContextualHint(CONTEXTUAL_HINTS.COMPLETED, 4000);
       }
     });
 
-    return unsubscribe;
-  }, [hasCompletedOnboarding, onboardingStep, advanceOnboarding]);
+    // Start idle timer
+    resetIdleTimer();
+
+    return () => {
+      unsubscribe();
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [hasCompletedOnboarding, onboardingStep, advanceOnboarding, resetIdleTimer, showContextualHint]);
+
+  // Show replenishing hint when quadrants are being replenished
+  useEffect(() => {
+    if (isAnyReplenishing && hasCompletedOnboarding) {
+      showContextualHint(CONTEXTUAL_HINTS.REPLENISHING, 3000);
+    }
+  }, [isAnyReplenishing, hasCompletedOnboarding, showContextualHint]);
 
   const handleMouseEnter = () => {
     setIsHovered(true);
