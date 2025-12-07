@@ -56,8 +56,13 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
     setCurrentPuzzleId(puzzleId);
     console.log(`[PuzzleSessionView] ⚡⚡⚡ Set currentPuzzleId: ${puzzleId}`);
 
-    // Only start session if we haven't already for this puzzleId
-    if (sessionStartedRef.current !== puzzleId) {
+    // Only start session if:
+    // 1. We haven't started for this puzzleId yet, OR
+    // 2. The previous attempt failed (isGenerating is false and no sessionState)
+    const canStartSession = sessionStartedRef.current !== puzzleId ||
+      (!isGenerating && !sessionState);
+
+    if (canStartSession) {
       // Get puzzle type from store and trigger pre-generation
       const state = contextStore.getState();
       const foundPuzzle = state.puzzles.find(p => p.id === puzzleId);
@@ -70,7 +75,7 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
       // Pass existing puzzleId and centralQuestion to prevent duplicate card creation
       startPuzzleSession(puzzleType, puzzleId, foundPuzzle?.centralQuestion);
     } else {
-      console.log(`[PuzzleSessionView] ⚡⚡⚡ Session already started for puzzleId: ${puzzleId}, skipping`);
+      console.log(`[PuzzleSessionView] ⚡⚡⚡ Session already started/generating for puzzleId: ${puzzleId}, skipping`);
     }
 
     // Cleanup on unmount

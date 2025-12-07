@@ -924,6 +924,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
     } catch (error) {
       console.error("[orchestrator] PUZZLE_SESSION_STARTED failed:", error);
+
+      // CRITICAL: Reset generating state so user can retry
+      usePuzzleSessionStateStore.getState().setGenerating(false);
+
       bus.emitType("AI_ERROR", {
         source: 'puzzle_session',
         message: 'Failed to generate puzzle pieces. Please try again.',

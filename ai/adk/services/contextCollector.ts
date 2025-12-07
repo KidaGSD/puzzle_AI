@@ -130,6 +130,7 @@ export class ContextCollector {
   private flashClient: LLMClient;
   private processing: boolean = false;
   private pendingFragmentIds: Set<string> = new Set();
+  private pendingFragments: Fragment[] = [];  // Queue of fragments to process
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly DEBOUNCE_MS = 500;
   private onReadyCallbacks: ContextReadyCallback[] = [];
@@ -151,16 +152,27 @@ export class ContextCollector {
 
   /**
    * Called when fragments change - debounces and batch processes
+   * Only processes NEW fragments that haven't been analyzed yet
    */
   onFragmentChange(fragments: Fragment[]): void {
-    fragments.forEach(f => this.pendingFragmentIds.add(f.id));
+    // Filter to only new/unprocessed fragments
+    const newFragments = fragments.filter(f => !this.cache.fragmentFeatures.has(f.id));
+
+    if (newFragments.length === 0) {
+      // All fragments already processed
+      return;
+    }
+
+    newFragments.forEach(f => this.pendingFragmentIds.add(f.id));
+    console.log(`[ContextCollector] ${newFragments.length} new fragments detected, queuing for processing`);
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
 
     this.debounceTimer = setTimeout(() => {
-      this.processFragments(fragments);
+      // Process only the new fragments, not all fragments
+      this.processFragments(newFragments);
     }, this.DEBOUNCE_MS);
   }
 
@@ -253,7 +265,15 @@ export class ContextCollector {
 
   private async processFragments(fragments: Fragment[]): Promise<void> {
     if (this.processing) {
-      console.log('[ContextCollector] Already processing, skipping');
+      // Queue for later processing instead of skipping
+      console.log(`[ContextCollector] Already processing, queuing ${fragments.length} fragments for later`);
+      fragments.forEach(f => {
+        this.pendingFragmentIds.add(f.id);
+        // Only add if not already queued
+        if (!this.pendingFragments.find(pf => pf.id === f.id)) {
+          this.pendingFragments.push(f);
+        }
+      });
       return;
     }
 
@@ -301,6 +321,15 @@ export class ContextCollector {
     } finally {
       this.processing = false;
       this.pendingFragmentIds.clear();
+
+      // Process any queued fragments
+      if (this.pendingFragments.length > 0) {
+        const queuedFragments = [...this.pendingFragments];
+        this.pendingFragments = [];
+        console.log(`[ContextCollector] Processing ${queuedFragments.length} queued fragments`);
+        // Use setTimeout to avoid stack overflow on many rapid additions
+        setTimeout(() => this.processFragments(queuedFragments), 100);
+      }
     }
   }
 

@@ -393,11 +393,13 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             incrementQuadrantAttachment(quadrant);
 
             // Record fragment-puzzle link for color indicator in HomeCanvasView
+            // Note: puzzleType must be uppercase (CLARIFY, EXPAND, REFINE)
             if (hasPreGenerated && preGeneratedPiece.fragment_id && puzzleId && sessionPuzzleType) {
+                const uppercasePuzzleType = sessionPuzzleType.toUpperCase() as 'CLARIFY' | 'EXPAND' | 'REFINE';
                 contextStore.addFragmentPuzzleLink({
                     fragmentId: preGeneratedPiece.fragment_id,
                     puzzleId: puzzleId,
-                    puzzleType: sessionPuzzleType,
+                    puzzleType: uppercasePuzzleType,
                     linkedAt: Date.now(),
                 });
             }
