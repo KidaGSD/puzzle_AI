@@ -2,6 +2,7 @@ import {
   Anchor,
   Cluster,
   Fragment,
+  FragmentPuzzleLink,
   PieceEvent,
   PieceStatus,
   Project,
@@ -9,6 +10,7 @@ import {
   Puzzle,
   PuzzlePiece,
   PuzzleSummary,
+  PuzzleType,
   UserPreferenceProfile,
   UUID,
 } from "../domain/models";
@@ -38,6 +40,8 @@ export interface ContextStore {
   addPieceEvent(event: PieceEvent): ProjectStore;
   setPreferenceProfile(profile: UserPreferenceProfile): ProjectStore;
   labelFragments(fragmentIds: UUID[], puzzleId: UUID): ProjectStore;
+  addFragmentPuzzleLink(link: FragmentPuzzleLink): ProjectStore;
+  getFragmentPuzzleType(fragmentId: UUID): PuzzleType | null;
   persist(): Promise<void>;
   hydrate(): Promise<ProjectStore>;
 }
@@ -59,6 +63,7 @@ export const createEmptyProjectStore = (project: Project): ProjectStore => ({
       reflectionsDisabled: false,
     },
   },
+  fragmentPuzzleLinks: [],
 });
 
 const cloneStore = (store: ProjectStore): ProjectStore =>
@@ -288,6 +293,40 @@ export const createContextStore = (
       });
     });
 
+  /**
+   * Add a link between a fragment and a puzzle
+   * Used when a piece referencing this fragment is placed on the board
+   */
+  const addFragmentPuzzleLink = (link: FragmentPuzzleLink) =>
+    setState(draft => {
+      // Initialize array if it doesn't exist (for backward compatibility)
+      if (!draft.fragmentPuzzleLinks) {
+        draft.fragmentPuzzleLinks = [];
+      }
+      // Check if this exact link already exists
+      const exists = draft.fragmentPuzzleLinks.some(
+        l => l.fragmentId === link.fragmentId && l.puzzleId === link.puzzleId
+      );
+      if (!exists) {
+        draft.fragmentPuzzleLinks.push(link);
+        console.log(`[contextStore] Added fragment-puzzle link: ${link.fragmentId} -> ${link.puzzleId} (${link.puzzleType})`);
+      }
+    });
+
+  /**
+   * Get the most recent puzzle type for a fragment
+   * Returns null if fragment has never been used in a puzzle
+   */
+  const getFragmentPuzzleType = (fragmentId: UUID): PuzzleType | null => {
+    const links = state.fragmentPuzzleLinks || [];
+    // Filter links for this fragment and sort by timestamp (most recent first)
+    const fragmentLinks = links
+      .filter(l => l.fragmentId === fragmentId)
+      .sort((a, b) => b.linkedAt - a.linkedAt);
+
+    return fragmentLinks.length > 0 ? fragmentLinks[0].puzzleType : null;
+  };
+
   const hydrate = async (): Promise<ProjectStore> => {
     if (!adapter) return state;
     const loaded = await adapter.load();
@@ -317,6 +356,8 @@ export const createContextStore = (
     addPieceEvent,
     setPreferenceProfile,
     labelFragments,
+    addFragmentPuzzleLink,
+    getFragmentPuzzleType,
     persist,
     hydrate,
   };

@@ -340,6 +340,14 @@ export const runQuadrantAgent = async (
       // ═══════════════════════════════════════════════════════════════════════
       if (fragmentId) {
         const sourceFrag = input.relevant_fragments.find(f => f.id === fragmentId);
+        console.log(`[QuadrantAgent] Looking up fragment ${fragmentId}, found:`, sourceFrag ? {
+          id: sourceFrag.id,
+          type: sourceFrag.type,
+          title: sourceFrag.title,
+          hasImageUrl: !!sourceFrag.imageUrl,
+          imageUrl: sourceFrag.imageUrl?.slice(0, 50),
+        } : 'NOT FOUND');
+
         if (sourceFrag) {
           // Backfill missing title
           if (!fragmentTitle) {
@@ -347,9 +355,15 @@ export const runQuadrantAgent = async (
             console.log(`[QuadrantAgent] Backfilled fragment_title for ${fragmentId}: "${fragmentTitle}"`);
           }
           // Backfill missing imageUrl for IMAGE fragments
-          if (!imageUrl && sourceFrag.imageUrl) {
-            imageUrl = sourceFrag.imageUrl;
-            console.log(`[QuadrantAgent] Backfilled image_url for ${fragmentId}`);
+          // Check both imageUrl field and if type is IMAGE
+          if (!imageUrl) {
+            if (sourceFrag.imageUrl) {
+              imageUrl = sourceFrag.imageUrl;
+              console.log(`[QuadrantAgent] Backfilled image_url from imageUrl field for ${fragmentId}`);
+            } else if (sourceFrag.type === 'IMAGE') {
+              // For IMAGE type fragments, the summary might contain the URL (legacy format)
+              console.log(`[QuadrantAgent] Fragment ${fragmentId} is IMAGE type but no imageUrl field found. Type: ${sourceFrag.type}`);
+            }
           }
           // Backfill missing summary
           if (!fragmentSummary) {

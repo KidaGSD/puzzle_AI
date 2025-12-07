@@ -183,6 +183,20 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
         return unsubscribe;
     }, [pendingPieceId]);
 
+    // Listen for PIECE_DELETED events to update available piece display
+    useEffect(() => {
+        const unsubscribe = eventBus.subscribe((event: any) => {
+            if (event.type === 'PIECE_DELETED' && event.payload?.quadrant === quadrant) {
+                console.log(`[QuadrantSpawner] PIECE_DELETED for ${quadrant}, updating display`);
+                // Increment dragKey to trigger preGeneratedPiece recalculation
+                setDragKey(k => k + 1);
+                // Check if we need to request more pieces from AI
+                usePuzzleSessionStateStore.getState().checkAndReplenish(quadrant);
+            }
+        });
+        return unsubscribe;
+    }, [quadrant]);
+
     // Generate SVG path for current shape
     const shapePath = useMemo(() => generateShapePath(currentShape, CELL_SIZE, 14), [currentShape]);
 
@@ -347,6 +361,13 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             const piecePriority = hasPreGenerated ? preGeneratedPiece.priority : 3;
 
             console.log(`[QuadrantSpawner] Creating piece #${attachmentCount + 1} for ${quadrant} with sequential color: ${pieceColor}`);
+            console.log(`[QuadrantSpawner] Pre-generated piece data:`, hasPreGenerated ? {
+                text: preGeneratedPiece.text,
+                fragment_id: preGeneratedPiece.fragment_id,
+                fragment_title: preGeneratedPiece.fragment_title,
+                image_url: preGeneratedPiece.image_url,
+                hasImageUrl: !!preGeneratedPiece.image_url,
+            } : 'NO PRE-GENERATED PIECE');
 
             // First add the piece to the store with fragment fields
             addPiece({
@@ -370,6 +391,16 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
 
             // Increment attachment count for this quadrant
             incrementQuadrantAttachment(quadrant);
+
+            // Record fragment-puzzle link for color indicator in HomeCanvasView
+            if (hasPreGenerated && preGeneratedPiece.fragment_id && puzzleId && sessionPuzzleType) {
+                contextStore.addFragmentPuzzleLink({
+                    fragmentId: preGeneratedPiece.fragment_id,
+                    puzzleId: puzzleId,
+                    puzzleType: sessionPuzzleType,
+                    linkedAt: Date.now(),
+                });
+            }
 
             // Mark pre-generated piece as used
             if (hasPreGenerated) {

@@ -486,14 +486,20 @@ export const toFragmentSummaries = (ranked: RankedFragment[]): Array<{
   tags?: string[];
   imageUrl?: string;
 }> => {
-  return ranked.map(r => ({
-    id: r.fragment.id,
-    type: r.fragment.type,
-    title: r.fragment.title || "Untitled",
-    summary: r.features.uniqueInsight || r.fragment.summary || "",
-    tags: r.features.textFeatures?.themes,
-    imageUrl: r.fragment.type === "IMAGE" ? r.fragment.content : undefined,
-  }));
+  return ranked.map(r => {
+    const imageUrl = r.fragment.type === "IMAGE" ? r.fragment.content : undefined;
+    if (r.fragment.type === "IMAGE") {
+      console.log(`[FragmentRanker] IMAGE fragment ${r.fragment.id}: content=${r.fragment.content?.slice(0, 50)}, imageUrl=${imageUrl?.slice(0, 50)}`);
+    }
+    return {
+      id: r.fragment.id,
+      type: r.fragment.type,
+      title: r.fragment.title || "Untitled",
+      summary: r.features.uniqueInsight || r.fragment.summary || "",
+      tags: r.features.textFeatures?.themes,
+      imageUrl,
+    };
+  });
 };
 
 /**

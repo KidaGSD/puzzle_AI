@@ -93,8 +93,8 @@ const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || 
  */
 const MODELS = {
   flash: 'gemini-2.5-flash',
-  pro: 'gemini-3-pro',
-  image: 'gemini-3-pro-image',
+  pro: 'gemini-2.5-pro',  // Fixed: gemini-3-pro not available, use stable 2.5-pro
+  image: 'gemini-2.0-flash',  // Fixed: gemini-3-pro-image not available, use 2.0-flash for multimodal
 } as const;
 
 const apiKey =
@@ -116,6 +116,88 @@ const RETRY_CONFIG = {
   maxDelayMs: 10000,
 };
 
+/**
+ * Pro model rate limit tracking
+ * Free tier: 250 RPD for gemini-2.5-pro
+ */
+const PRO_RATE_LIMIT = {
+  // Track when we hit RPD limit (reset at midnight)
+  isExhausted: false,
+  exhaustedAt: 0,
+  // Reset window: 24 hours
+  resetWindowMs: 24 * 60 * 60 * 1000,
+  // Daily request counter (approximate)
+  dailyRequests: 0,
+  lastResetDate: new Date().toDateString(),
+  // Conservative limit before hitting hard cap
+  softLimit: 200, // Warn and start preferring flash
+  hardLimit: 240, // Force fallback to flash
+};
+
+/**
+ * Check if Pro model should fallback to Flash
+ */
+function shouldFallbackToFlash(): boolean {
+  // Reset counter at midnight
+  const today = new Date().toDateString();
+  if (PRO_RATE_LIMIT.lastResetDate !== today) {
+    PRO_RATE_LIMIT.dailyRequests = 0;
+    PRO_RATE_LIMIT.lastResetDate = today;
+    PRO_RATE_LIMIT.isExhausted = false;
+    console.log('[adkClient] Pro rate limit counter reset for new day');
+  }
+
+  // Check if we hit the limit recently
+  if (PRO_RATE_LIMIT.isExhausted) {
+    const timeSinceExhausted = Date.now() - PRO_RATE_LIMIT.exhaustedAt;
+    if (timeSinceExhausted < PRO_RATE_LIMIT.resetWindowMs) {
+      return true;
+    }
+    // Reset after window
+    PRO_RATE_LIMIT.isExhausted = false;
+  }
+
+  // Check soft/hard limits
+  if (PRO_RATE_LIMIT.dailyRequests >= PRO_RATE_LIMIT.hardLimit) {
+    console.warn(`[adkClient] Pro daily limit reached (${PRO_RATE_LIMIT.dailyRequests}/${PRO_RATE_LIMIT.hardLimit}), using flash`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Record a Pro model request
+ */
+function recordProRequest() {
+  PRO_RATE_LIMIT.dailyRequests++;
+  if (PRO_RATE_LIMIT.dailyRequests >= PRO_RATE_LIMIT.softLimit) {
+    console.warn(`[adkClient] Pro requests nearing limit: ${PRO_RATE_LIMIT.dailyRequests}/${PRO_RATE_LIMIT.hardLimit}`);
+  }
+}
+
+/**
+ * Mark Pro model as exhausted (hit 429 error)
+ */
+function markProExhausted() {
+  PRO_RATE_LIMIT.isExhausted = true;
+  PRO_RATE_LIMIT.exhaustedAt = Date.now();
+  console.error('[adkClient] Pro model RPD exhausted, falling back to flash until reset');
+}
+
+/**
+ * Get current Pro usage stats
+ */
+export function getProUsageStats() {
+  return {
+    dailyRequests: PRO_RATE_LIMIT.dailyRequests,
+    softLimit: PRO_RATE_LIMIT.softLimit,
+    hardLimit: PRO_RATE_LIMIT.hardLimit,
+    isExhausted: PRO_RATE_LIMIT.isExhausted,
+    shouldUseFallback: shouldFallbackToFlash(),
+  };
+}
+
 const cleanText = (text?: string | null) => (text || "").trim();
 
 /**
@@ -125,11 +207,13 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Retry with exponential backoff
+ * @param isPro - Whether this is a Pro model request (for rate limit tracking)
  */
 async function withRetry<T>(
   fn: () => Promise<T>,
   context: string,
-  maxRetries = RETRY_CONFIG.maxRetries
+  maxRetries = RETRY_CONFIG.maxRetries,
+  isPro = false
 ): Promise<T> {
   let lastError: Error | null = null;
 
@@ -143,6 +227,17 @@ async function withRetry<T>(
       const isRateLimit = error?.message?.includes('429') ||
                           error?.message?.includes('RESOURCE_EXHAUSTED') ||
                           error?.message?.includes('quota');
+
+      // Check if it's RPD exhausted (daily limit)
+      const isRPDExhausted = error?.message?.includes('quota') ||
+                              error?.message?.includes('RESOURCE_EXHAUSTED') ||
+                              (error?.message?.includes('429') && error?.message?.includes('day'));
+
+      // If Pro model hit RPD limit, mark it and don't retry
+      if (isPro && isRPDExhausted) {
+        markProExhausted();
+        throw new Error(`Pro model RPD exhausted. Original: ${error?.message}`);
+      }
 
       // Check if it's a retryable error
       const isRetryable = isRateLimit ||
@@ -293,6 +388,7 @@ const makeMockClient = (tier: ModelTier = 'flash'): LLMClient => ({
 
 /**
  * Create an LLM client with a specific model tier
+ * Pro tier will automatically fallback to Flash when RPD limit is reached
  *
  * @param tier - 'flash' for fast/cheap tasks, 'pro' for complex reasoning
  */
@@ -302,19 +398,47 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
     return makeMockClient(tier);
   }
 
-  const model = MODELS[tier];
-  console.log(`[adkClient] Initializing ${tier} client with model: ${model}`);
   const genAI = new GoogleGenAI({ apiKey });
+
+  /**
+   * Get the actual model to use, considering Pro fallback
+   */
+  const getEffectiveModel = (): { model: string; effectiveTier: ModelTier; usingFallback: boolean } => {
+    if (tier === 'pro' && shouldFallbackToFlash()) {
+      return {
+        model: MODELS.flash,
+        effectiveTier: 'flash',
+        usingFallback: true,
+      };
+    }
+    return {
+      model: MODELS[tier],
+      effectiveTier: tier,
+      usingFallback: false,
+    };
+  };
+
+  const baseModel = MODELS[tier];
+  console.log(`[adkClient] Initializing ${tier} client with model: ${baseModel}`);
 
   return {
     isMock: false,
-    model,
+    model: baseModel,
     tier,
 
     /**
      * Generate text response from text-only prompt
      */
     async generate(prompt: string, temperature = DEFAULT_TEMPERATURE) {
+      const { model, effectiveTier, usingFallback } = getEffectiveModel();
+      const isPro = effectiveTier === 'pro';
+
+      if (usingFallback) {
+        console.log(`[adkClient] Pro fallback: using ${model} instead`);
+      }
+
+      if (isPro) recordProRequest();
+
       return withRetry(async () => {
         const res = await genAI.models.generateContent({
           model,
@@ -324,7 +448,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
           },
         });
         return cleanText(res.text);
-      }, `generate(${tier})`);
+      }, `generate(${effectiveTier})`, RETRY_CONFIG.maxRetries, isPro);
     },
 
     /**
@@ -338,6 +462,15 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
       if (images.length === 0) {
         return this.generate(prompt, temperature);
       }
+
+      const { model, effectiveTier, usingFallback } = getEffectiveModel();
+      const isPro = effectiveTier === 'pro';
+
+      if (usingFallback) {
+        console.log(`[adkClient] Pro fallback: using ${model} instead`);
+      }
+
+      if (isPro) recordProRequest();
 
       return withRetry(async () => {
         // Build multimodal content parts
@@ -381,7 +514,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
           return cleanText(res.text);
         }
 
-        console.log(`[adkClient] Generating with ${parts.length - 1} image(s) using ${tier}`);
+        console.log(`[adkClient] Generating with ${parts.length - 1} image(s) using ${effectiveTier}`);
 
         const res = await genAI.models.generateContent({
           model,
@@ -392,7 +525,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
         });
 
         return cleanText(res.text);
-      }, `generateWithImages(${tier})`);
+      }, `generateWithImages(${effectiveTier})`, RETRY_CONFIG.maxRetries, isPro);
     },
 
     /**
@@ -403,8 +536,17 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
       schema: JsonSchema,
       temperature = DEFAULT_TEMPERATURE
     ): Promise<T> {
+      const { model, effectiveTier, usingFallback } = getEffectiveModel();
+      const isPro = effectiveTier === 'pro';
+
+      if (usingFallback) {
+        console.log(`[adkClient] Pro fallback: using ${model} instead`);
+      }
+
+      if (isPro) recordProRequest();
+
       return withRetry(async () => {
-        console.log(`[adkClient] Generating structured output (${tier}) with schema type: ${schema.type}`);
+        console.log(`[adkClient] Generating structured output (${effectiveTier}) with schema type: ${schema.type}`);
 
         const res = await genAI.models.generateContent({
           model,
@@ -423,7 +565,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
           console.error('[adkClient] Failed to parse structured output:', text);
           throw new Error(`Structured output parsing failed: ${error}`);
         }
-      }, `generateStructured(${tier})`);
+      }, `generateStructured(${effectiveTier})`, RETRY_CONFIG.maxRetries, isPro);
     },
 
     /**
@@ -438,6 +580,15 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
       if (images.length === 0) {
         return this.generateStructured(prompt, schema, temperature) as Promise<T>;
       }
+
+      const { model, effectiveTier, usingFallback } = getEffectiveModel();
+      const isPro = effectiveTier === 'pro';
+
+      if (usingFallback) {
+        console.log(`[adkClient] Pro fallback: using ${model} instead`);
+      }
+
+      if (isPro) recordProRequest();
 
       return withRetry(async () => {
         // Build multimodal content parts
@@ -486,7 +637,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
           return JSON.parse(text) as T;
         }
 
-        console.log(`[adkClient] Generating structured output with ${parts.length - 1} image(s) using ${tier}`);
+        console.log(`[adkClient] Generating structured output with ${parts.length - 1} image(s) using ${effectiveTier}`);
 
         const res = await genAI.models.generateContent({
           model,
@@ -505,7 +656,7 @@ export const createLLMClient = (tier: ModelTier = 'flash'): LLMClient => {
           console.error('[adkClient] Failed to parse structured VLM output:', text);
           throw new Error(`Structured VLM output parsing failed: ${error}`);
         }
-      }, `generateStructuredWithImages(${tier})`);
+      }, `generateStructuredWithImages(${effectiveTier})`, RETRY_CONFIG.maxRetries, isPro);
     },
   };
 };

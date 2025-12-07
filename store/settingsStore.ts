@@ -17,7 +17,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      isMockMode: true, // Default to mock mode for development
+      isMockMode: false, // Default OFF for production release
 
       setMockMode: (enabled: boolean) => set({ isMockMode: enabled }),
 

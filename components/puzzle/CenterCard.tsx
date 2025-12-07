@@ -28,15 +28,18 @@ export const CenterCard: React.FC<CenterCardProps> = ({
   const height = CENTER_CARD_HEIGHT * CELL_SIZE;
   const accentColor = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
 
-  // Dynamic font size based on question length - optimized for 4x2 card (256x128px)
+  // Dynamic font size based on question length - optimized for 4x4 card (256x256px)
+  // Prioritize showing full text over large font size
   const fontSize = useMemo(() => {
     const charCount = centralQuestion.length;
 
-    // More compact scaling for the shorter card
-    if (charCount <= 30) return '16px';
-    if (charCount <= 50) return '14px';
-    if (charCount <= 80) return '12px';
-    return '11px';
+    // Scale down more aggressively for longer text to show everything
+    if (charCount <= 40) return '18px';
+    if (charCount <= 80) return '15px';
+    if (charCount <= 120) return '13px';
+    if (charCount <= 180) return '12px';
+    if (charCount <= 250) return '11px';
+    return '10px'; // Very long questions
   }, [centralQuestion]);
 
   const handleClick = () => {
@@ -70,15 +73,15 @@ export const CenterCard: React.FC<CenterCardProps> = ({
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleClick}
       >
-        {/* Central Question - Full display without truncation */}
+        {/* Central Question - show full text, scroll if needed */}
         <div
-          className="text-white font-semibold text-center leading-snug w-full h-full flex items-center justify-center"
+          className="text-white font-semibold text-center leading-snug w-full flex items-center justify-center px-2 overflow-y-auto"
           style={{
             fontSize: fontSize,
-            lineHeight: '1.35',
+            lineHeight: '1.4',
             overflowWrap: 'break-word',
             wordBreak: 'break-word',
-            hyphens: 'auto',
+            maxHeight: `calc(${height}px - 24px)`,  // Leave padding space
           }}
         >
           {centralQuestion}

@@ -6,7 +6,6 @@ import { PuzzlePiece } from './PuzzlePiece';
 import { useGameStore } from '../../store/puzzleSessionStore';
 import { QuadrantSpawner } from './QuadrantSpawner';
 import { COLORS } from '../../constants/puzzleGrid';
-import { Mascot } from './Mascot';
 import { Puzzle } from '../../domain/models';
 
 interface BoardProps {
@@ -67,7 +66,6 @@ export const Board: React.FC<BoardProps> = ({
         className="bottom-20 right-6"
       />
 
-      <Mascot />
 
       {/* Top Bar Chrome */}
       <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start pointer-events-none">

@@ -188,6 +188,17 @@ export interface AgentState {
   };
 }
 
+/**
+ * Tracks which fragments have been used in which puzzles
+ * Used to display puzzle type colors on fragments in HomeCanvasView
+ */
+export interface FragmentPuzzleLink {
+  fragmentId: UUID;
+  puzzleId: UUID;
+  puzzleType: PuzzleType;
+  linkedAt: number;  // timestamp when the link was created
+}
+
 export interface ProjectStore {
   project: Project;
   fragments: Fragment[];
@@ -199,6 +210,7 @@ export interface ProjectStore {
   preferenceProfile: UserPreferenceProfile;
   pieceEvents: PieceEvent[];
   agentState: AgentState;
+  fragmentPuzzleLinks: FragmentPuzzleLink[];  // Track fragment-puzzle associations
 }
 
 // ========== Multi-Agent System Types ==========

@@ -136,7 +136,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
   const [projectTitle] = useState(contextStore.getState().project.title);
   const [aim, setAim] = useState(contextStore.getState().project.processAim);
   const [puzzleSummaries, setPuzzleSummaries] = useState(contextStore.getState().puzzleSummaries);
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false); // Toggle with ` key
   const [storeFragments, setStoreFragments] = useState(contextStore.getState().fragments);
 
   // Mascot State
@@ -780,6 +780,7 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
         onClose={handleMascotClose}
         proposal={mascotProposal}
         onStartPuzzle={handleStartPuzzle}
+        context="home"
       />
 
       {/* Debug Overlay - Toggle with backtick (`) key */}

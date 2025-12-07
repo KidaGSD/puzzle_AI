@@ -7,7 +7,8 @@ import { attachOrchestratorStub } from "../ai/orchestratorStub";
 import { MascotProposal } from "../ai/agents/mascotAgent";
 import { MATCHA_PROJECT, loadMockFragments } from "../services/mockDataLoader";
 import { usePuzzleSessionStateStore, setEventBusRef } from "./puzzleSessionStateStore";
-import { useGameStore } from "./puzzleSessionStore";
+import { useGameStore, setEventBusRefForGameStore } from "./puzzleSessionStore";
+import { useSettingsStore } from "./settingsStore";
 // Background AI Services
 import { serviceManager, PrecomputedInsights, EnrichedFragment } from "../ai/adk/services";
 
@@ -43,15 +44,38 @@ export const refreshMockData = () => {
   return initializeMockData();
 };
 
-// AUTO-INITIALIZE: Load mock data at module load time
-// This ensures fragments are available before any React component renders
-console.log('[runtime] Auto-initializing mock data...');
-initializeMockData();
+/**
+ * Clear all mock data from store
+ * Call this when mock mode is turned OFF
+ */
+export const clearMockData = () => {
+  contextStore.setState((draft) => {
+    draft.fragments = [];
+  });
+  console.log('[runtime] Cleared mock data from store');
+};
+
+// AUTO-INITIALIZE: Load mock data only if mock mode is ON
+// Check persisted settings to determine initial state
+const checkAndInitializeMockData = () => {
+  // Get persisted mock mode setting
+  const isMockMode = useSettingsStore.getState().isMockMode;
+
+  if (isMockMode) {
+    console.log('[runtime] Mock mode ON - loading mock data...');
+    initializeMockData();
+  } else {
+    console.log('[runtime] Mock mode OFF - starting with empty canvas');
+  }
+};
+
+checkAndInitializeMockData();
 
 export const eventBus = createEventBus();
 
-// Set eventBus reference for puzzleSessionStateStore to use
+// Set eventBus reference for stores to use
 setEventBusRef(eventBus);
+setEventBusRefForGameStore(eventBus);
 
 // ========== Background AI Services ==========
 

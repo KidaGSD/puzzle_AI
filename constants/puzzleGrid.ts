@@ -22,9 +22,9 @@ export const QUADRANTS = {
 };
 
 // Center card dimensions in grid units
-// 4×2 wide and short for compact layout
+// 4×4 square layout for better question display
 export const CENTER_CARD_WIDTH = 4;
-export const CENTER_CARD_HEIGHT = 2;
+export const CENTER_CARD_HEIGHT = 4;
 
 // Shapes 1-8 from the reference guide
 export const SHAPES = {

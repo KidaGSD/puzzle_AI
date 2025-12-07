@@ -273,10 +273,10 @@ export const runCentralQuestionAgent = async (
     }
   });
 
-  // Create agent - use gemini-3-pro for complex reasoning tasks
+  // Create agent - use gemini-2.5-pro for complex reasoning tasks
   const agent = new LlmAgent({
     name: 'central_question',
-    model: 'gemini-3-pro',
+    model: 'gemini-2.5-pro',
     description: 'Generate central questions for design puzzles',
     instruction: buildCentralQuestionInstruction(input.puzzleType),
     outputSchema: QUESTION_OUTPUT_SCHEMA,

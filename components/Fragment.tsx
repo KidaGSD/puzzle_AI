@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
 import { Link2, Image as ImageIcon, Trash2, Maximize2, Sparkles } from 'lucide-react';
-import { usePuzzleSessionStateStore } from '../store/puzzleSessionStateStore';
+import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
   data: FragmentData;
@@ -377,9 +377,8 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
 
         const validTags = (tags || []).filter(isValidTag);
 
-        // Get current puzzle session type
-        const sessionState = usePuzzleSessionStateStore.getState().sessionState;
-        const currentPuzzleType = sessionState?.puzzle_type || null;
+        // Get puzzle type from fragment-puzzle links (for HomeCanvasView)
+        const fragmentPuzzleType = contextStore.getFragmentPuzzleType(data.id);
 
         const PUZZLE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
           CLARIFY: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
@@ -389,28 +388,6 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
 
         return (
           <div className="px-4 pb-4 shrink-0">
-            {/* Current Puzzle Session Indicator */}
-            {currentPuzzleType && (
-              <div className="mb-2 flex items-center gap-1.5">
-                <span
-                  className="w-3 h-3 rounded-sm border-2"
-                  style={{
-                    backgroundColor: PUZZLE_TYPE_COLORS[currentPuzzleType]?.bg || PUZZLE_TYPE_COLORS.CLARIFY.bg,
-                    borderColor: PUZZLE_TYPE_COLORS[currentPuzzleType]?.border || PUZZLE_TYPE_COLORS.CLARIFY.border,
-                  }}
-                  title={`Puzzle: ${currentPuzzleType}`}
-                />
-                <span
-                  className="text-[9px] font-bold uppercase tracking-wider"
-                  style={{
-                    color: PUZZLE_TYPE_COLORS[currentPuzzleType]?.text || PUZZLE_TYPE_COLORS.CLARIFY.text,
-                  }}
-                >
-                  {currentPuzzleType}
-                </span>
-              </div>
-            )}
-
             {/* Tags + Pip Row */}
             <div className="flex items-center justify-between gap-2">
               {/* Tags - Left side */}
@@ -431,8 +408,14 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                 ))}
               </div>
 
-              {/* Lever Pip - Right side */}
-              {leverColor ? (
+              {/* Puzzle Type Pip - Right side (shows color based on puzzle this fragment was used in) */}
+              {fragmentPuzzleType ? (
+                <div
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ backgroundColor: PUZZLE_TYPE_COLORS[fragmentPuzzleType]?.border || '#E5E7EB' }}
+                  title={`Used in ${fragmentPuzzleType} puzzle`}
+                />
+              ) : leverColor ? (
                 <div
                   className="w-3 h-3 rounded-full shrink-0"
                   style={{ backgroundColor: leverColor }}

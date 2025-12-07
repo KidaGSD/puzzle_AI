@@ -410,6 +410,16 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
   // Show preview if piece has content, image, or just title
   const hasContent = (data.content && data.content.trim().length > 0) || data.imageUrl || displayTitle;
 
+  // Debug log for imageUrl
+  if (data.fragmentId) {
+    console.log(`[PuzzlePiece] Piece ${data.id} fragment data:`, {
+      fragmentId: data.fragmentId,
+      fragmentTitle: data.fragmentTitle,
+      imageUrl: data.imageUrl,
+      hasImageUrl: !!data.imageUrl,
+    });
+  }
+
   // Lighter color for fill
   const fillColor = isDragging && !isValidPos ? '#ef4444' : adjustedColor;
 

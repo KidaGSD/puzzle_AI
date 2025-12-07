@@ -6,10 +6,13 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { Board } from '../components/puzzle/Board';
-import { contextStore, ensurePuzzleSync, getPuzzleSyncInstance, ensurePuzzleSessionStateSync, startPuzzleSession, ensureOrchestrator } from '../store/runtime';
+import { contextStore, ensurePuzzleSync, getPuzzleSyncInstance, ensurePuzzleSessionStateSync, startPuzzleSession, ensureOrchestrator, eventBus, setMascotProposalListener } from '../store/runtime';
 import { useGameStore } from '../store/puzzleSessionStore';
 import { usePuzzleSessionStateStore } from '../store/puzzleSessionStateStore';
 import { Puzzle as DomainPuzzle, PuzzleType } from '../domain/models';
+import { MascotButton } from '../components/mascot/MascotButton';
+import { MascotPanel } from '../components/mascot/MascotPanel';
+import { MascotProposal } from '../ai/agents/mascotAgent';
 
 interface PuzzleSessionViewProps {
   puzzleId: string;
@@ -27,6 +30,10 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
   const setCurrentPuzzleId = useGameStore((state) => state.setCurrentPuzzleId);
   const clearPieces = useGameStore((state) => state.clearPieces);
   const { isGenerating, sessionState, clearSession } = usePuzzleSessionStateStore();
+
+  // Mascot state
+  const [isMascotOpen, setIsMascotOpen] = useState(false);
+  const [mascotProposal, setMascotProposal] = useState<MascotProposal | null>(null);
 
   // Track if session has been started for this puzzleId
   const sessionStartedRef = useRef<string | null>(null);
@@ -111,6 +118,23 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
     onExit();
   };
 
+  // Mascot handlers
+  const handleMascotOpen = () => {
+    setIsMascotOpen(true);
+    setMascotProposal(null);
+  };
+
+  const handleMascotClose = () => {
+    setIsMascotOpen(false);
+  };
+
+  // In puzzle session, mascot can help with the current puzzle
+  const handleMascotAction = (proposal: MascotProposal) => {
+    // For now, just close the panel - could add more actions later
+    setIsMascotOpen(false);
+    setMascotProposal(null);
+  };
+
   if (!puzzle) {
     return (
       <div className="w-screen h-screen flex items-center justify-center bg-gray-50">
@@ -126,6 +150,18 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
         puzzle={puzzle}
         processAim={processAim}
         onEndPuzzle={handleEndPuzzle}
+      />
+
+      {/* Mascot Button - available in puzzle session for help */}
+      <MascotButton onClick={handleMascotOpen} />
+
+      {/* Mascot Panel */}
+      <MascotPanel
+        isOpen={isMascotOpen}
+        onClose={handleMascotClose}
+        proposal={mascotProposal}
+        onStartPuzzle={handleMascotAction}
+        context="puzzle"
       />
     </div>
   );

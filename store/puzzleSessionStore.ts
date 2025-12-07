@@ -10,6 +10,14 @@ import {
   PieceStatus,
   UUID,
 } from '../domain/models';
+import { EventBus } from './eventBus';
+
+// Reference to eventBus - will be set from runtime.ts
+let eventBusRef: EventBus | null = null;
+
+export const setEventBusRefForGameStore = (bus: EventBus) => {
+  eventBusRef = bus;
+};
 
 // ====== Mapping Functions ======
 
@@ -159,7 +167,21 @@ export const useGameStore = create<GameState>((set, get) => ({
     set((state) => ({ pieces: [...state.pieces, pieceWithDefaults] }));
   },
 
-  removePiece: (id) => set((state) => ({ pieces: state.pieces.filter((p) => p.id !== id) })),
+  removePiece: (id) => {
+    const state = get();
+    const pieceToRemove = state.pieces.find(p => p.id === id);
+
+    set({ pieces: state.pieces.filter(p => p.id !== id) });
+
+    // Emit PIECE_DELETED event so QuadrantSpawner can update
+    if (pieceToRemove && eventBusRef) {
+      console.log(`[puzzleSessionStore] Emitting PIECE_DELETED for ${id} in ${pieceToRemove.quadrant}`);
+      eventBusRef.emitType('PIECE_DELETED', {
+        pieceId: id,
+        quadrant: pieceToRemove.quadrant,
+      });
+    }
+  },
 
   getQuadrantAttachmentCount: (quadrant) => {
     return get().quadrantAttachmentCounts[quadrant];

@@ -2,6 +2,7 @@ import React from 'react';
 import { MousePointer2, Type, Image as ImageIcon, BoxSelect, Database, DatabaseZap } from 'lucide-react';
 import { ToolType } from '../types';
 import { useSettingsStore } from '../store/settingsStore';
+import { initializeMockData, clearMockData } from '../store/runtime';
 
 interface ToolbarProps {
   activeTool: ToolType;
@@ -14,6 +15,20 @@ interface ToolbarProps {
  */
 export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) => {
   const { isMockMode, toggleMockMode } = useSettingsStore();
+
+  // Handle mock mode toggle with realtime data loading/clearing
+  const handleMockModeToggle = () => {
+    const newState = !isMockMode;
+    toggleMockMode();
+
+    if (newState) {
+      // Turning ON - load mock data
+      initializeMockData();
+    } else {
+      // Turning OFF - clear mock data
+      clearMockData();
+    }
+  };
 
   const tools = [
     { id: ToolType.POINTER, icon: MousePointer2, label: 'Select' },
@@ -61,7 +76,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ activeTool, onSelectTool }) =>
         className="flex flex-col bg-white/90 backdrop-blur border border-gray-200 rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] p-2"
       >
         <button
-          onClick={toggleMockMode}
+          onClick={handleMockModeToggle}
           className={`
             p-3.5 rounded-xl transition-all duration-200 relative group
             ${isMockMode

@@ -32,6 +32,7 @@ interface MascotPanelProps {
   onClose: () => void
   proposal: MascotProposal | null
   onStartPuzzle: (proposal: MascotProposal) => void
+  context?: 'home' | 'puzzle'  // 'home' = canvas view, 'puzzle' = puzzle session
 }
 
 type ViewState = 'menu' | 'question' | 'analyzing' | 'proposal'
@@ -40,7 +41,7 @@ type ViewState = 'menu' | 'question' | 'analyzing' | 'proposal'
  * MascotPanel - Redesigned as a Conversational Bubble
  * Floats near the mascot button, offering a premium, chat-like experience.
  */
-export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: MascotPanelProps) {
+export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle, context = 'home' }: MascotPanelProps) {
   const [view, setView] = useState<ViewState>('menu')
   const [userQuestion, setUserQuestion] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
@@ -57,9 +58,12 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
     }
   }, [isOpen, proposal])
 
-  // Close on click outside
+  // Close on click outside (but not when analyzing)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // Don't close when in analyzing state
+      if (view === 'analyzing') return;
+
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
         // Don't close if clicking the mascot button (handled by parent)
         const target = event.target as HTMLElement;
@@ -75,7 +79,7 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, view]);
 
   const handleSuggestClick = () => {
     setView('analyzing')
@@ -137,15 +141,17 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
             }}
           >
 
-            {/* Header / Close */}
-            <div className="absolute top-3 right-3 z-10">
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-md hover:bg-black/5 text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            {/* Header / Close - hidden when analyzing */}
+            {view !== 'analyzing' && (
+              <div className="absolute top-3 right-3 z-10">
+                <button
+                  onClick={onClose}
+                  className="p-1.5 rounded-md hover:bg-black/5 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
 
             {/* Content Area */}
             <div className="p-6">
@@ -155,23 +161,30 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
                 <div className="flex flex-col gap-4">
                   <div className="mb-1">
                     <h3 className="font-bold text-gray-800">Hi there!</h3>
-                    <p className="text-sm text-gray-500">How can I help you think today?</p>
+                    <p className="text-sm text-gray-500">
+                      {context === 'puzzle'
+                        ? "Need help with this puzzle?"
+                        : "How can I help you think today?"}
+                    </p>
                   </div>
 
                   <div className="grid gap-3">
-                    <button
-                      onClick={handleSuggestClick}
-                      className="group flex items-center gap-4 p-4 rounded-xl bg-white border border-[#D6D6D6] shadow-sm hover:shadow-md hover:border-purple-200 hover:bg-purple-50 transition-all text-left"
-                    >
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center text-[#000000] group-hover:text-purple-600 group-hover:scale-110 transition-all">
-                        <Sparkles size={18} />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">Suggest a Puzzle</div>
-                        <div className="text-xs text-gray-500">I'll look at your fragments</div>
-                      </div>
-                      <ArrowRight size={16} className="ml-auto text-gray-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />
-                    </button>
+                    {/* Only show "Suggest a Puzzle" in home context */}
+                    {context === 'home' && (
+                      <button
+                        onClick={handleSuggestClick}
+                        className="group flex items-center gap-4 p-4 rounded-xl bg-white border border-[#D6D6D6] shadow-sm hover:shadow-md hover:border-purple-200 hover:bg-purple-50 transition-all text-left"
+                      >
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center text-[#000000] group-hover:text-purple-600 group-hover:scale-110 transition-all">
+                          <Sparkles size={18} />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">Suggest a Puzzle</div>
+                          <div className="text-xs text-gray-500">I'll look at your fragments</div>
+                        </div>
+                        <ArrowRight size={16} className="ml-auto text-gray-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />
+                      </button>
+                    )}
 
                     <button
                       onClick={() => setView('question')}
@@ -181,8 +194,12 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
                         <MessageCircle size={18} />
                       </div>
                       <div>
-                        <div className="font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">I have a question</div>
-                        <div className="text-xs text-gray-500">Start from a specific topic</div>
+                        <div className="font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">
+                          {context === 'puzzle' ? "Ask a question" : "I have a question"}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {context === 'puzzle' ? "Get help with this puzzle" : "Start from a specific topic"}
+                        </div>
                       </div>
                       <ArrowRight size={16} className="ml-auto text-gray-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />
                     </button>
@@ -200,27 +217,46 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
                     ← Back
                   </button>
 
-                  <h3 className="font-bold text-gray-800 mb-2">What's on your mind?</h3>
+                  <h3 className="font-bold text-gray-800 mb-2">
+                    {context === 'puzzle' ? "Ask me anything" : "What's on your mind?"}
+                  </h3>
                   <textarea
                     autoFocus
                     value={userQuestion}
                     onChange={(e) => setUserQuestion(e.target.value)}
-                    placeholder="e.g. How do I make this feel more nostalgic?"
+                    placeholder={context === 'puzzle'
+                      ? "e.g. What does this piece mean? How should I approach this?"
+                      : "e.g. How do I make this feel more nostalgic?"}
                     className="w-full p-3 rounded-xl bg-white border-2 border-gray-200 focus:border-purple-200 focus:ring-0 resize-none text-sm mb-4 min-h-[100px] shadow-sm transition-colors"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        handleQuestionSubmit();
+                        if (context === 'puzzle') {
+                          // In puzzle session, just show a simple response (TODO: implement actual Q&A)
+                          setView('menu');
+                          setUserQuestion('');
+                        } else {
+                          handleQuestionSubmit();
+                        }
                       }
                     }}
                   />
 
                   <button
-                    onClick={handleQuestionSubmit}
+                    onClick={() => {
+                      if (context === 'puzzle') {
+                        // In puzzle session, close after asking (TODO: implement actual Q&A response)
+                        setView('menu');
+                        setUserQuestion('');
+                        onClose();
+                      } else {
+                        handleQuestionSubmit();
+                      }
+                    }}
                     disabled={!userQuestion.trim()}
                     className="w-full py-3 rounded-xl bg-black text-white font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                   >
-                    Create Puzzle <ArrowRight size={16} />
+                    {context === 'puzzle' ? 'Ask' : 'Create Puzzle'} <ArrowRight size={16} />
                   </button>
                 </div>
               )}
