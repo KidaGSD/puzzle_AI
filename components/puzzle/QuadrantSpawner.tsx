@@ -1,12 +1,12 @@
 
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CELL_SIZE, ALL_SHAPES, getShapeForText } from '../../constants/puzzleGrid';
+import { CELL_SIZE, ALL_SHAPES, getShapeForText, getSequentialShape } from '../../constants/puzzleGrid';
 import { QuadrantType, Position, PieceCategoryType, PiecePriority } from '../../types';
 import { useGameStore } from '../../store/puzzleSessionStore';
 import { usePuzzleSessionStateStore } from '../../store/puzzleSessionStateStore';
 import { eventBus, contextStore } from '../../store/runtime';
-import { getPriorityColor } from '../../constants/colors';
+import { getPriorityColor, getSequentialColor } from '../../constants/colors';
 import { DesignMode } from '../../domain/models';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -94,7 +94,7 @@ const generateShapePath = (cells: Position[], cellSize: number, cornerRadius: nu
 };
 
 export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, label, color, className, shapePreset, puzzleId }) => {
-    const { addPiece, isValidDrop, currentPuzzleId } = useGameStore();
+    const { addPiece, isValidDrop, currentPuzzleId, getQuadrantAttachmentCount, incrementQuadrantAttachment } = useGameStore();
 
     // Get pre-generated pieces from session state store
     const {
@@ -112,24 +112,28 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
     const preGeneratedPiece = useMemo(() => getNextPiece(quadrant), [quadrant, dragKey, sessionState]);
     const [currentLabel, setCurrentLabel] = useState(preGeneratedPiece?.text || randomLabel(quadrant));
     const [currentPriority, setCurrentPriority] = useState<PiecePriority>(preGeneratedPiece?.priority || 3);
-    // Select initial shape based on pre-generated piece text length (if available)
+
+    // Get attachment count for sequential shape selection
+    const attachmentCount = getQuadrantAttachmentCount(quadrant);
+
+    // Select initial shape based on attachment order (sequential 1-8)
     const [currentShape, setCurrentShape] = useState(() => {
         if (shapePreset) return shapePreset;
-        if (preGeneratedPiece?.text) return getShapeForText(preGeneratedPiece.text);
-        return getRandomShape();
+        // Use sequential shape based on how many pieces have been attached
+        return getSequentialShape(attachmentCount);
     });
 
-    // Update label and shape when pre-generated piece changes
+    // Update label and shape when pre-generated piece changes or attachment count changes
     useEffect(() => {
         if (preGeneratedPiece) {
             setCurrentLabel(preGeneratedPiece.text);
             setCurrentPriority(preGeneratedPiece.priority);
-            // Select shape based on text length (2-3 words = tall, 4-6 words = wide)
-            if (!shapePreset) {
-                setCurrentShape(getShapeForText(preGeneratedPiece.text));
-            }
         }
-    }, [preGeneratedPiece, shapePreset]);
+        // Update shape based on attachment count (sequential 1-8)
+        if (!shapePreset) {
+            setCurrentShape(getSequentialShape(attachmentCount));
+        }
+    }, [preGeneratedPiece, shapePreset, attachmentCount]);
 
     const buttonRef = useRef<HTMLDivElement>(null);
     const [dragStartPos, setDragStartPos] = useState<{ x: number, y: number } | null>(null);
@@ -143,7 +147,13 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
     const [pendingContent, setPendingContent] = useState<{ title: string; content: string } | null>(null);
     const [isLoadingContent, setIsLoadingContent] = useState(false);
 
-    // Get priority-based color for this quadrant
+    // Get sequential color for this quadrant based on attachment count
+    const sequentialColor = useMemo(() => {
+        const mode = quadrant.toUpperCase() as DesignMode;
+        return getSequentialColor(mode, attachmentCount);
+    }, [quadrant, attachmentCount]);
+
+    // Get priority-based color for this quadrant (fallback for pre-generated pieces)
     const priorityColor = useMemo(() => {
         const mode = quadrant.toUpperCase() as DesignMode;
         return getPriorityColor(mode, currentPriority);
@@ -327,10 +337,11 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             const hasPreGenerated = preGeneratedPiece && preGeneratedPiece.text;
             const title = hasPreGenerated ? preGeneratedPiece.text : (pendingContent?.title || '...');
             const content = pendingContent?.content || '';
-            const pieceColor = hasPreGenerated ? priorityColor : color;
+            // Use sequential color based on attachment order
+            const pieceColor = sequentialColor;
             const piecePriority = hasPreGenerated ? preGeneratedPiece.priority : 3;
 
-            console.log(`[QuadrantSpawner] Creating piece with ${hasPreGenerated ? 'pre-generated' : 'fallback'} content: "${title}" (priority: ${piecePriority})`);
+            console.log(`[QuadrantSpawner] Creating piece #${attachmentCount + 1} for ${quadrant} with sequential color: ${pieceColor}`);
 
             // First add the piece to the store with fragment fields
             addPiece({
@@ -352,6 +363,9 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 imageUrl: hasPreGenerated ? preGeneratedPiece.image_url : undefined,
             });
 
+            // Increment attachment count for this quadrant
+            incrementQuadrantAttachment(quadrant);
+
             // Mark pre-generated piece as used
             if (hasPreGenerated) {
                 markPieceUsed(quadrant, preGeneratedPiece.text);
@@ -368,18 +382,13 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
             if (nextPiece) {
                 setCurrentLabel(nextPiece.text);
                 setCurrentPriority(nextPiece.priority);
-                // Select shape based on text length for next piece
-                if (!shapePreset) {
-                    setCurrentShape(getShapeForText(nextPiece.text));
-                }
             } else {
                 setCurrentLabel(randomLabel(quadrant));
                 setCurrentPriority(3);
-                // Fall back to random shape when no pre-generated piece
-                if (!shapePreset) {
-                    setCurrentShape(getRandomShape());
-                }
             }
+
+            // Shape will be updated by useEffect when attachmentCount changes
+            // No need to manually set it here
         }
 
         // Clean up pending state
@@ -407,12 +416,12 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                 style={{ backgroundColor: priorityColor + '20' }}
                             >
                                 <div className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: priorityColor }} />
+                                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: sequentialColor }} />
                                     <span className="text-white font-semibold text-sm">
                                         {isLoadingContent ? 'Generating...' : (pendingContent?.title || currentLabel)}
                                     </span>
                                     <span className="text-xs text-gray-400 uppercase ml-auto">
-                                        {quadrant} · P{currentPriority}
+                                        {quadrant} · #{attachmentCount + 1}
                                     </span>
                                 </div>
                             </div>
@@ -461,12 +470,12 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                             y1={dragStartPos.y}
                             x2={dragCurrentPos.x}
                             y2={dragCurrentPos.y}
-                            stroke={priorityColor}
+                            stroke={sequentialColor}
                             strokeWidth="3"
                             strokeDasharray="6 4"
                             strokeOpacity="0.6"
                         />
-                        <circle cx={dragStartPos.x} cy={dragStartPos.y} r="4" fill={priorityColor} />
+                        <circle cx={dragStartPos.x} cy={dragStartPos.y} r="4" fill={sequentialColor} />
                     </svg>
                 </div>
             )}
@@ -475,21 +484,18 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 <div className="relative group" ref={buttonRef}>
                     {/* Main spawner button */}
                     <div
-                        className="w-24 h-10 rounded-xl shadow-md flex items-center justify-center px-3 transition-all duration-200"
+                        className="w-24 h-10 rounded-xl flex items-center justify-center px-3 transition-all duration-200 group-hover:!bg-[#000000]"
                         style={{
                             backgroundColor: color,
-                            boxShadow: isDragging
-                                ? '0 0 0 2px rgba(255,255,255,0.6), 0 10px 25px rgba(0,0,0,0.35)'
-                                : '0 0 0 1px rgba(17,24,39,0.06), 0 8px 20px rgba(0,0,0,0.25)',
                             transform: isDragging ? 'translateY(2px) scale(0.98)' : 'translateY(0) scale(1)',
                         }}
                     >
-                        <span className="text-[11px] font-bold tracking-wider text-white uppercase">
+                        <span className="text-[11px] font-bold tracking-wider text-white" style={{ textTransform: 'capitalize' }}>
                             {label}
                         </span>
                     </div>
 
-                    {/* Session puzzleType indicator */}
+                    {/* Session puzzleType indicator
                     <div
                         className="absolute -right-1 -top-1 w-5 h-5 rounded-full bg-white shadow-sm border border-gray-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                         title={`Session: ${sessionPuzzleType.toUpperCase()}`}
@@ -497,7 +503,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                         <span className="text-[8px] font-bold text-gray-500 uppercase">
                             {sessionPuzzleType.charAt(0)}
                         </span>
-                    </div>
+                    </div> */}
 
                     {/* Draggable area */}
                     <motion.div
@@ -535,8 +541,8 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                 >
                                     <defs>
                                         <linearGradient id={`spawner-grad-${quadrant}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor={isValid ? priorityColor : '#ef4444'} stopOpacity="1" />
-                                            <stop offset="100%" stopColor={isValid ? priorityColor : '#ef4444'} stopOpacity="0.85" />
+                                            <stop offset="0%" stopColor={isValid ? sequentialColor : '#ef4444'} stopOpacity="1" />
+                                            <stop offset="100%" stopColor={isValid ? sequentialColor : '#ef4444'} stopOpacity="0.85" />
                                         </linearGradient>
                                     </defs>
                                     {/* Fill without stroke to avoid internal lines */}
@@ -563,7 +569,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                         className="absolute inset-0 flex items-center justify-center pointer-events-none p-2"
                                     >
                                         <span
-                                            className="text-white font-bold uppercase tracking-wider text-center drop-shadow-lg"
+                                            className="text-white font-bold tracking-wider text-center drop-shadow-lg"
                                             style={{
                                                 // Adaptive font size based on shape
                                                 fontSize: shapeBounds.width > shapeBounds.height ? '11px' : '8px',
@@ -574,7 +580,9 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                                                 display: '-webkit-box',
                                                 WebkitLineClamp: shapeBounds.width < shapeBounds.height ? 4 : 2,
                                                 WebkitBoxOrient: 'vertical',
-                                                wordBreak: 'break-word',
+                                                overflowWrap: 'break-word',
+                                                wordBreak: 'normal',
+                                                textTransform: 'capitalize',
                                             }}
                                         >
                                             {currentLabel}

@@ -28,7 +28,7 @@ export const CenterCard: React.FC<CenterCardProps> = ({
 
   return (
     <div
-      className="absolute rounded-xl flex flex-col items-center justify-center px-4 py-3 z-10 shadow-2xl transition-all duration-300"
+      className="absolute rounded-xl flex flex-col items-center justify-center px-4 py-3 shadow-2xl transition-all duration-300"
       style={{
         width: width,
         height: height,
@@ -36,6 +36,7 @@ export const CenterCard: React.FC<CenterCardProps> = ({
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
+        zIndex: isHovered ? 10000 : 10,
         boxShadow: isHovered
           ? '0 0 0 2px rgba(255,255,255,0.3), 0 20px 40px -10px rgba(0,0,0,0.6)'
           : '0 0 0 1px rgba(255,255,255,0.1), 0 10px 30px -10px rgba(0,0,0,0.5)'
@@ -45,7 +46,7 @@ export const CenterCard: React.FC<CenterCardProps> = ({
     >
       {/* Puzzle Type Badge */}
       <div
-        className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider mb-3"
+        className="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider mb-3"
         style={{
           backgroundColor: typeStyle.bgColor,
           color: typeStyle.color,
@@ -55,21 +56,26 @@ export const CenterCard: React.FC<CenterCardProps> = ({
       </div>
 
       {/* Central Question - Main Focus */}
-      <div className="text-white font-semibold text-base leading-snug text-center drop-shadow-md px-2">
+      <div
+        className="text-white font-bold text-center drop-shadow-md px-2 overflow-y-auto max-h-full"
+        style={{
+          fontSize: '16px',
+          lineHeight: '1.3',
+          maxHeight: `calc(${height}px - 80px)`, // Leave space for badge and padding
+          overflowWrap: 'break-word',
+          wordBreak: 'normal',
+          textTransform: 'capitalize',
+        }}
+      >
         {centralQuestion}
       </div>
 
-      {/* Subtle bottom accent */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl opacity-60"
-        style={{ backgroundColor: typeStyle.color }}
-      />
 
       {/* Popup tooltip on hover - positioned above the card */}
       {processAim && isHovered && (
         <div
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-white rounded-lg shadow-xl px-4 py-3 min-w-[200px] max-w-[300px] z-50"
-          style={{ animation: 'fadeIn 0.2s ease-out' }}
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 bg-white rounded-lg shadow-xl px-4 py-3 min-w-[200px] max-w-[300px]"
+          style={{ animation: 'fadeIn 0.2s ease-out', zIndex: 9999 }}
         >
           <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">Process Aim</div>
           <div className="text-sm text-gray-700 leading-relaxed">{processAim}</div>

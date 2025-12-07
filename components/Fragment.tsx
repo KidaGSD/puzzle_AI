@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, forwardRef } from 'react';
 import { FragmentData } from '../types';
-import { GripVertical, Link2, Image as ImageIcon, Trash2, Edit2, Check, X, Maximize2, Sparkles } from 'lucide-react';
+import { Link2, Image as ImageIcon, Trash2, Maximize2, Sparkles } from 'lucide-react';
 import { contextStore } from '../store/runtime';
 
 interface FragmentProps {
@@ -53,6 +53,20 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
     }
   }, [isEditingTitle]);
 
+  // ESC key to close image modal
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showImageModal) {
+        setShowImageModal(false);
+      }
+    };
+
+    if (showImageModal) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [showImageModal]);
+
   // Handle title save
   const handleTitleSave = () => {
     setIsEditingTitle(false);
@@ -95,47 +109,92 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   const isImage = data.type === 'IMAGE';
   const isLink = data.type === 'LINK';
   const isFrame = data.type === 'FRAME';
+  const hasFixedHeight = data.size.height != null;
 
   return (
     <div
       ref={ref}
-      className={`absolute flex flex-col rounded-lg transition-shadow duration-200 group
-        ${isSelected ? 'z-10' : ''}
-      `}
+      className="absolute flex flex-col rounded-lg group cursor-move"
       style={{
-        transform: `translate(${data.position.x}px, ${data.position.y}px)`,
-        width: data.size.width,
-        height: data.size.height, // Enforce height for all types now that we resize
-        backgroundColor: isFrame ? 'rgba(255,255,255,0.1)' : '#fff', // Slight tint for frame
-        // 2.5D Thickness and Shadow
-        boxShadow: isFrame
-          ? 'none'
-          : isSelected
-            ? '0 14px 28px rgba(0,0,0,0.15), 0 10px 10px rgba(0,0,0,0.12), 0 4px 0 #e5e5e5'
-            : '0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1), 0 2px 0 #e5e5e5',
-        border: isFrame ? '2px dashed #e5e5e5' : '1px solid #e5e5e5',
-        zIndex: isSelected ? 100 : data.zIndex,
-        // pointerEvents: isFrame && !isSelected ? 'none' : 'auto', // Allow clicking through frame if not selected (optional, but good for frames) - actually let's keep it clickable for selection
+        transform: `translate(${data.position.x}px, ${data.position.y}px) ${isSelected ? 'rotateX(1deg)' : 'rotateX(0deg)'}`,
+        transformStyle: 'preserve-3d',
+        width: data.size.width || 320,
+        height: 'auto',
+        maxHeight: hasFixedHeight ? undefined : '80vh', // Prevent extremely tall fragments
+        background: 'linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.98) 100%)',
+        boxShadow: isSelected
+          ? '0 20px 40px rgba(0,0,0,0.2), 0 8px 16px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)'
+          : '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)',
+        border: '1px solid #D6D6D6',
+        borderTop: '1px solid rgba(255,255,255,0.8)',
+        zIndex: data.zIndex,
+        overflow: hasFixedHeight ? 'hidden' : 'visible', // Changed: visible for auto-height
       }}
       onMouseDown={(e) => onMouseDown(e, data.id)}
     >
-      {/* Top Handle / Title Bar - Hide for Frame */}
+
+      {/* Action Buttons - Top Right Corner (Hover) */}
       {!isFrame && (
-        <div className="h-8 w-full bg-gray-50 rounded-t-lg border-b border-gray-100 flex items-center px-2 cursor-grab active:cursor-grabbing relative shrink-0 gap-1.5">
-          {/* Lever Pip */}
-          {leverColor ? (
-            <div
-              className="w-2.5 h-2.5 rounded-full shadow-sm border border-black/10 shrink-0"
-              style={{ backgroundColor: leverColor }}
-            />
-          ) : (
-            <div className="w-2.5 h-2.5 rounded-full bg-gray-200 border border-black/5 shrink-0" />
+        <div className="absolute top-4 right-4 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          {/* AI Summary button */}
+          {summary && !summary.startsWith('/') && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAISummary(!showAISummary);
+              }}
+              className={`p-1.5 rounded transition-colors ${
+                showAISummary
+                  ? 'bg-purple-100 text-purple-600'
+                  : 'bg-white/90 text-gray-400 hover:text-purple-500 hover:bg-purple-50'
+              }`}
+              title="AI Summary"
+            >
+              <Sparkles size={14} />
+            </button>
           )}
 
-          {/* AI Title - Editable */}
-          <div className="flex-1 min-w-0 flex items-center">
-            {isEditingTitle ? (
-              <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+          {/* Delete button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onDelete) onDelete(data.id);
+            }}
+            className="p-1.5 bg-white/90 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+            title="Delete"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* AI Summary Popup */}
+      {showAISummary && summary && !summary.startsWith('/') && (
+        <div className="mx-4 mt-4 p-3 bg-purple-50 border border-purple-100 rounded-lg text-[12px] text-purple-700">
+          <div className="flex items-start gap-2">
+            <Sparkles size={14} className="mt-0.5 flex-shrink-0 text-purple-400" />
+            <div>
+              <span className="font-semibold text-purple-600">AI Summary: </span>
+              {summary}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area - Scrollable */}
+      <div
+        className={hasFixedHeight ? "flex-1 overflow-auto p-4" : "p-4"}
+        style={hasFixedHeight ? {} : { overflow: 'visible' }}
+      >
+        {isFrame ? (
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+            {data.title || 'Frame'}
+          </div>
+        ) : isImage ? (
+          <>
+            {/* Image Title */}
+            <div className="mb-2">
+              {isEditingTitle ? (
                 <input
                   ref={titleInputRef}
                   type="text"
@@ -143,278 +202,249 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
                   onChange={(e) => setLocalTitle(e.target.value)}
                   onKeyDown={handleTitleKeyDown}
                   onBlur={handleTitleSave}
-                  className="flex-1 text-[11px] font-medium text-gray-700 bg-white border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border-2 border-gray-200 focus:border-purple-200 rounded px-2 py-1 focus:outline-none focus:ring-0 shadow-sm transition-colors"
                   placeholder="Fragment title..."
+                  onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
+                  style={{ lineHeight: '24px' }}
                 />
-                <button
-                  onClick={handleTitleSave}
-                  className="p-0.5 text-green-600 hover:text-green-700"
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <Check size={12} />
-                </button>
-                <button
-                  onClick={handleTitleCancel}
-                  className="p-0.5 text-gray-400 hover:text-gray-600"
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ) : (
-              <span
-                className="text-[11px] font-medium text-gray-600 truncate cursor-text"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsEditingTitle(true);
-                }}
-                title={localTitle || 'Click to add title'}
-              >
-                {localTitle || <span className="text-gray-400 italic">Untitled</span>}
-              </span>
-            )}
-          </div>
-
-          {/* Edit button (visible on hover) */}
-          {!isEditingTitle && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingTitle(true);
-              }}
-              className="p-1 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              title="Edit title"
-            >
-              <Edit2 size={12} />
-            </button>
-          )}
-
-          {/* AI Summary button - shows AI-generated summary on click */}
-          {summary && !summary.startsWith('/') && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowAISummary(!showAISummary);
-              }}
-              className={`p-1 transition-opacity shrink-0 ${
-                showAISummary
-                  ? 'text-purple-500'
-                  : 'text-gray-300 hover:text-purple-400 opacity-0 group-hover:opacity-100'
-              }`}
-              title={showAISummary ? "Hide AI summary" : "Show AI summary"}
-            >
-              <Sparkles size={12} />
-            </button>
-          )}
-
-          <GripVertical size={14} className="text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onDelete) onDelete(data.id);
-            }}
-            className="p-1 text-gray-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100 shrink-0"
-            title="Delete fragment"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* AI Summary Popup - shown when Sparkles button is clicked */}
-      {showAISummary && summary && !summary.startsWith('/') && (
-        <div className="px-3 py-2 bg-purple-50 border-b border-purple-100 text-[11px] text-purple-700">
-          <div className="flex items-start gap-2">
-            <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-purple-400" />
-            <div>
-              <span className="font-medium text-purple-500">AI Summary: </span>
-              {summary}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Content */}
-      <div className={`relative flex-1 overflow-hidden flex flex-col ${isFrame ? '' : 'p-4 bg-white rounded-b-lg'}`}>
-        {isFrame ? (
-          <div className="p-2 text-xs font-bold text-gray-400 uppercase tracking-wider select-none">
-            {data.title || 'Frame'}
-          </div>
-        ) : isImage ? (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded border border-dashed border-gray-200 overflow-hidden relative group/image">
-            {data.content ? (
-              <>
-                <img
-                  src={data.content}
-                  alt={data.title}
-                  className="w-full h-full object-contain cursor-zoom-in"
+              ) : (
+                <h2
+                  className="text-[20px] font-semibold leading-[24px] text-[#000000] cursor-text"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowImageModal(true);
+                    setIsEditingTitle(true);
                   }}
-                />
-                {/* Expand button overlay */}
-                <button
-                  className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg opacity-0 group-hover/image:opacity-100 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowImageModal(true);
-                  }}
-                  title="View full size"
+                  title="Click to edit title"
+                  style={{ lineHeight: '24px' }}
                 >
-                  <Maximize2 size={14} className="text-white" />
-                </button>
-              </>
-            ) : (
-              <>
-                <ImageIcon size={24} className="text-gray-300 mb-2" />
-                <span className="text-xs text-gray-400">Image Placeholder</span>
-              </>
-            )}
-          </div>
-        ) : isLink ? (
-          <div className="flex items-center gap-3 p-2 bg-[#F5F1E8] rounded-md border border-[#EBE6DA] h-full">
-            <div className="w-10 h-10 bg-white rounded flex items-center justify-center shrink-0 shadow-sm border border-gray-100">
-              <Link2 size={20} className="text-[#8AC6C3]" />
-            </div>
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-xs font-bold text-[#262626] truncate">{data.title || 'Link Title'}</span>
-              <span className="text-[10px] text-gray-500 truncate">{data.content}</span>
-            </div>
-          </div>
-        ) : (
-          <textarea
-            ref={textareaRef}
-            value={localContent}
-            onChange={handleChange}
-            className="w-full h-full bg-transparent resize-none focus:outline-none text-[#262626] font-medium leading-relaxed font-sans text-[15px]"
-            placeholder="Type a note..."
-            onMouseDown={(e) => e.stopPropagation()} // Allow selecting text without dragging fragment immediately
-          />
-        )}
-
-        {/* Summary & Tags - Filter out file paths and invalid tags */}
-        {(() => {
-          // Filter out file paths from summary
-          const isFilePath = (s: string) =>
-            s?.startsWith('/') ||
-            s?.includes('.png') ||
-            s?.includes('.jpg') ||
-            s?.includes('.webp') ||
-            s?.includes('/MockupFragments/');
-
-          // Filter out invalid tags (file extensions, numbers, hashes)
-          const isValidTag = (tag: string) => {
-            if (/^(png|jpg|jpeg|gif|webp|pdf|svg)$/i.test(tag)) return false;
-            if (/^[0-9]+$/.test(tag)) return false;
-            if (/^[0-9a-f]+$/i.test(tag) && tag.length >= 6) return false;
-            if (/^(mockupfragments|fragments|images)$/i.test(tag)) return false;
-            if (tag.length < 2) return false;
-            return true;
-          };
-
-          const displaySummary = summary && !isFilePath(summary) ? summary : null;
-          const validTags = (tags || []).filter(isValidTag);
-
-          if (!displaySummary && validTags.length === 0) return null;
-          if (isFrame) return null;
-
-          return (
-            <div className="mt-2 text-[12px] text-gray-500 space-y-1">
-              {displaySummary && <div className="leading-snug">Summary: {displaySummary}</div>}
-              {validTags.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {validTags.slice(0, 4).map(tag => (
-                    <span key={tag} className="px-2 py-0.5 bg-gray-100 rounded-full text-[10px] font-semibold text-gray-600">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+                  {localTitle || <span className="text-gray-300">Untitled</span>}
+                </h2>
               )}
             </div>
-          );
-        })()}
 
-        {/* Puzzle Labels - colored by puzzle type */}
-        {!isFrame && (() => {
-          const storeFragment = contextStore.getState().fragments.find(f => f.id === data.id);
-          const labels = storeFragment?.labels || [];
-          if (labels.length === 0) return null;
-
-          // Puzzle type colors: CLARIFY=Blue, EXPAND=Orange, REFINE=Purple
-          const PUZZLE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-            CLARIFY: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
-            EXPAND: { bg: '#FFEDD5', text: '#9A3412', border: '#F97316' },
-            REFINE: { bg: '#F3E8FF', text: '#6B21A8', border: '#9333EA' },
-          };
-
-          return (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {labels.map((puzzleId) => {
-                const puzzle = contextStore.getState().puzzles.find(p => p.id === puzzleId);
-                if (!puzzle) return null;
-
-                const puzzleType = puzzle.type || 'CLARIFY';
-                const colors = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
-
-                return (
-                  <span
-                    key={puzzleId}
-                    className="w-3 h-3 rounded-full border-2"
-                    style={{
-                      backgroundColor: colors.bg,
-                      borderColor: colors.border,
+            {/* Image Content */}
+            <div className="w-full flex items-center justify-center bg-gray-50 rounded overflow-hidden relative group/image" style={{ minHeight: '200px' }}>
+              {data.content ? (
+                <>
+                  <img
+                    src={data.content}
+                    alt={data.title}
+                    className="w-full h-full object-contain cursor-zoom-in"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowImageModal(true);
                     }}
-                    title={`${puzzleType}: ${puzzle.centralQuestion}`}
                   />
-                );
-              })}
+                  <button
+                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg opacity-0 group-hover/image:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowImageModal(true);
+                    }}
+                    title="View full size"
+                  >
+                    <Maximize2 size={14} className="text-white" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <ImageIcon size={32} className="text-gray-300 mb-2" />
+                  <span className="text-sm text-gray-400">Image Placeholder</span>
+                </>
+              )}
             </div>
-          );
-        })()}
+          </>
+        ) : (
+          <>
+            {/* Text Title */}
+            <div className="mb-2">
+              {isEditingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={localTitle}
+                  onChange={(e) => setLocalTitle(e.target.value)}
+                  onKeyDown={handleTitleKeyDown}
+                  onBlur={handleTitleSave}
+                  className="w-full text-[20px] font-semibold leading-[24px] text-[#000000] bg-white border-2 border-gray-200 focus:border-purple-200 rounded px-2 py-1 focus:outline-none focus:ring-0 shadow-sm transition-colors"
+                  placeholder="Fragment title..."
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  style={{ lineHeight: '24px' }}
+                />
+              ) : (
+                <h2
+                  className="text-[20px] font-semibold leading-[24px] text-[#000000] cursor-text"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditingTitle(true);
+                  }}
+                  title="Click to edit title"
+                  style={{ lineHeight: '24px' }}
+                >
+                  {localTitle || <span className="text-gray-300">Untitled</span>}
+                </h2>
+              )}
+            </div>
+
+            {/* Text Content */}
+            <textarea
+              ref={textareaRef}
+              value={localContent}
+              onChange={handleChange}
+              className="w-full bg-transparent resize-none focus:outline-none text-[14px] leading-[18px] text-[#2F2F2F] font-normal"
+              placeholder="Type a note..."
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                minHeight: '60px',
+                height: 'auto',
+                overflow: 'hidden',
+                lineHeight: '18px'
+              }}
+            />
+          </>
+        )}
       </div>
 
+      {/* Bottom Row: Tags + Lever Pip - Fixed at bottom with 16px padding */}
+      {!isFrame && (() => {
+        // Filter valid tags
+        const isValidTag = (tag: string) => {
+          if (/^(png|jpg|jpeg|gif|webp|pdf|svg)$/i.test(tag)) return false;
+          if (/^[0-9]+$/.test(tag)) return false;
+          if (/^[0-9a-f]+$/i.test(tag) && tag.length >= 6) return false;
+          if (/^(mockupfragments|fragments|images)$/i.test(tag)) return false;
+          if (tag.length < 2) return false;
+          return true;
+        };
+
+        const validTags = (tags || []).filter(isValidTag);
+
+        // Get puzzle labels
+        const storeFragment = contextStore.getState().fragments.find(f => f.id === data.id);
+        const labels = storeFragment?.labels || [];
+        const PUZZLE_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+          CLARIFY: { bg: '#DBEAFE', text: '#1E40AF', border: '#3B82F6' },
+          EXPAND: { bg: '#FFEDD5', text: '#9A3412', border: '#F97316' },
+          REFINE: { bg: '#F3E8FF', text: '#6B21A8', border: '#9333EA' },
+        };
+
+        return (
+          <div className="px-4 pb-4 shrink-0">
+            {/* Puzzle Labels */}
+            {labels.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {labels.map((puzzleId) => {
+                  const puzzle = contextStore.getState().puzzles.find(p => p.id === puzzleId);
+                  if (!puzzle) return null;
+
+                  const puzzleType = puzzle.type || 'CLARIFY';
+                  const colors = PUZZLE_TYPE_COLORS[puzzleType] || PUZZLE_TYPE_COLORS.CLARIFY;
+
+                  return (
+                    <span
+                      key={puzzleId}
+                      className="w-3 h-3 rounded-sm border-2"
+                      style={{
+                        backgroundColor: colors.bg,
+                        borderColor: colors.border,
+                      }}
+                      title={`${puzzleType}: ${puzzle.centralQuestion}`}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Tags + Pip Row */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Tags - Left side */}
+              <div className="flex flex-wrap gap-2 flex-1">
+                {validTags.slice(0, 4).map(tag => (
+                  <span
+                    key={tag}
+                    className="px-2 py-1 bg-[#F1F1F1] text-[#646464] rounded-[16px] text-[8px] font-medium leading-[10px]"
+                    style={{
+                      height: '18px',
+                      lineHeight: '10px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* Lever Pip - Right side */}
+              {leverColor ? (
+                <div
+                  className="w-3 h-3 rounded-full shrink-0"
+                  style={{ backgroundColor: leverColor }}
+                />
+              ) : (
+                <div className="w-3 h-3 rounded-full bg-[#E5E7EB] shrink-0" />
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Resize Handle */}
-      {isSelected && (
+      {isSelected && !isFrame && (
         <div
           className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-center justify-center z-50"
           onMouseDown={(e) => onResizeStart(e, data.id)}
         >
-          <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div>
+          {/* <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div> */}
         </div>
       )}
 
-      {/* Image Modal for full-size view */}
+      {/* Image Modal */}
       {showImageModal && isImage && data.content && (
-        <div
-          className="fixed inset-0 z-[500] bg-black/90 flex items-center justify-center"
-          onClick={() => setShowImageModal(false)}
-        >
-          <div className="relative max-w-[95vw] max-h-[95vh]">
+        <>
+          <div
+            className="fixed inset-0 z-[499] bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowImageModal(false)}
+          />
+
+          <div
+            className="absolute inset-0 z-[500] flex items-center justify-center bg-transparent cursor-zoom-out"
+            onClick={() => setShowImageModal(false)}
+          >
             <img
               src={data.content}
               alt={data.title || 'Image'}
-              className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="w-full h-full object-contain"
             />
-            {/* Close button */}
             <button
-              className="absolute -top-4 -right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
-              onClick={() => setShowImageModal(false)}
-              title="Close"
+              className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowImageModal(false);
+              }}
+              title="Minimize"
             >
-              <X size={20} className="text-gray-700" />
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-white"
+              >
+                <polyline points="4 14 10 14 10 20"></polyline>
+                <polyline points="20 10 14 10 14 4"></polyline>
+                <line x1="14" y1="10" x2="21" y2="3"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
             </button>
-            {/* Image title */}
-            {data.title && (
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
-                <p className="text-white font-medium text-lg">{data.title}</p>
-              </div>
-            )}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
