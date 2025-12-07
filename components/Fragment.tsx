@@ -114,23 +114,39 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
   return (
     <div
       ref={ref}
-      className="absolute flex flex-col rounded-lg group cursor-move"
+      className={`absolute flex flex-col rounded-lg group cursor-move ${isFrame ? 'pointer-events-auto' : ''}`}
       style={{
         transform: `translate(${data.position.x}px, ${data.position.y}px) ${isSelected ? 'rotateX(1deg)' : 'rotateX(0deg)'}`,
         transformStyle: 'preserve-3d',
         width: data.size.width || 320,
-        height: 'auto',
-        maxHeight: hasFixedHeight ? undefined : '80vh', // Prevent extremely tall fragments
-        background: 'linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.98) 100%)',
-        boxShadow: isSelected
-          ? '0 20px 40px rgba(0,0,0,0.2), 0 8px 16px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)'
-          : '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)',
-        border: '1px solid #D6D6D6',
-        borderTop: '1px solid rgba(255,255,255,0.8)',
+        // Frame uses explicit height, others use auto
+        height: isFrame ? data.size.height : 'auto',
+        maxHeight: isFrame ? undefined : (hasFixedHeight ? undefined : '80vh'),
+        // Frame is transparent with dashed border
+        background: isFrame
+          ? 'transparent'
+          : 'linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0.98) 100%)',
+        boxShadow: isFrame
+          ? 'none'
+          : isSelected
+            ? '0 20px 40px rgba(0,0,0,0.2), 0 8px 16px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)'
+            : '0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.06), inset 0 2px 4px rgba(255,255,255,0.95), inset 0 -1px 3px rgba(0,0,0,0.03)',
+        border: isFrame
+          ? `2px dashed ${isSelected ? '#3B82F6' : '#9CA3AF'}`
+          : '1px solid #D6D6D6',
+        borderTop: isFrame ? undefined : '1px solid rgba(255,255,255,0.8)',
         zIndex: data.zIndex,
-        overflow: hasFixedHeight ? 'hidden' : 'visible', // Changed: visible for auto-height
+        overflow: isFrame ? 'visible' : (hasFixedHeight ? 'hidden' : 'visible'),
+        // Frame should allow mouse events to pass through for children
+        ...(isFrame && !isSelected ? { pointerEvents: 'none' } : {}),
       }}
-      onMouseDown={(e) => onMouseDown(e, data.id)}
+      onMouseDown={(e) => {
+        // For frames, re-enable pointer events on the frame itself
+        if (isFrame) {
+          e.currentTarget.style.pointerEvents = 'auto';
+        }
+        onMouseDown(e, data.id);
+      }}
     >
 
       {/* Action Buttons - Top Right Corner (Hover) */}
@@ -187,8 +203,48 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
         style={hasFixedHeight ? {} : { overflow: 'visible' }}
       >
         {isFrame ? (
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            {data.title || 'Frame'}
+          <div
+            className="flex items-start justify-between"
+            style={{ pointerEvents: 'auto' }}
+          >
+            {/* Frame Title - Editable */}
+            {isEditingTitle ? (
+              <input
+                ref={titleInputRef}
+                type="text"
+                value={localTitle}
+                onChange={(e) => setLocalTitle(e.target.value)}
+                onKeyDown={handleTitleKeyDown}
+                onBlur={handleTitleSave}
+                className="flex-1 text-xs font-bold text-gray-600 uppercase tracking-wider bg-white/80 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+                placeholder="Frame title..."
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className="text-xs font-bold text-gray-400 uppercase tracking-wider cursor-text hover:text-gray-600 transition-colors px-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditingTitle(true);
+                }}
+                title="Click to edit title"
+              >
+                {localTitle || data.title || 'Frame'}
+              </div>
+            )}
+
+            {/* Frame Delete Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onDelete) onDelete(data.id);
+              }}
+              className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+              title="Delete frame"
+            >
+              <Trash2 size={12} />
+            </button>
           </div>
         ) : isImage ? (
           <>
@@ -391,13 +447,18 @@ export const Fragment = forwardRef<HTMLDivElement, FragmentProps>(({
         );
       })()}
 
-      {/* Resize Handle */}
-      {isSelected && !isFrame && (
+      {/* Resize Handle - enabled for both regular fragments and frames */}
+      {isSelected && (
         <div
-          className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-center justify-center z-50"
+          className={`absolute bottom-0 right-0 cursor-nwse-resize flex items-center justify-center z-50 ${
+            isFrame ? 'w-4 h-4' : 'w-6 h-6'
+          }`}
+          style={{ pointerEvents: 'auto' }}
           onMouseDown={(e) => onResizeStart(e, data.id)}
         >
-          {/* <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm"></div> */}
+          {isFrame && (
+            <div className="w-2 h-2 bg-blue-500 rounded-full shadow-sm" />
+          )}
         </div>
       )}
 

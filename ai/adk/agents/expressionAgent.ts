@@ -125,7 +125,7 @@ ${avoidStr}
 - "Bold playful energy" (intensity + personality + feeling)
 - "Traditional warmth spirit" (heritage + emotion + essence)
 
-Generate 6-8 pieces for the EXPRESSION quadrant.`;
+Generate 8-10 pieces for the EXPRESSION quadrant.`;
 };
 
 // ========== Validation ==========
@@ -181,6 +181,7 @@ export const runExpressionAgent = async (
       let fragmentId = p.fragment_id || p.fragmentId;
       let fragmentTitle = p.fragment_title || p.fragmentTitle;
       let fragmentSummary = p.fragment_summary || p.fragmentSummary || '';
+      let imageUrl = p.image_url || p.imageUrl;
 
       if (fragmentId) {
         const srcFrag = input.fragments.find(f => f.id === fragmentId);
@@ -188,6 +189,10 @@ export const runExpressionAgent = async (
           if (!fragmentTitle) fragmentTitle = srcFrag.title;
           if (!fragmentSummary || fragmentSummary.length < 15) {
             fragmentSummary = `From "${srcFrag.title}": ${srcFrag.uniqueInsight || srcFrag.mood || srcFrag.summary?.slice(0, 80) || 'Emotional tone reference'}`;
+          }
+          // CRITICAL: Pull imageUrl from source fragment if it's an IMAGE type
+          if (!imageUrl && srcFrag.type === 'IMAGE' && srcFrag.imageUrl) {
+            imageUrl = srcFrag.imageUrl;
           }
         }
       }
@@ -204,7 +209,7 @@ export const runExpressionAgent = async (
         fragmentId,
         fragmentTitle,
         fragmentSummary,
-        imageUrl: p.image_url || p.imageUrl,
+        imageUrl,
         qualityMeta: {
           wordCount: text.split(/\s+/).length,
           isQuestion: false,

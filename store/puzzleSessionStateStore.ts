@@ -22,6 +22,14 @@ import {
 } from '../domain/models';
 import { QuadrantType, PiecePriority } from '../types';
 import { getPreferenceStore, PieceOutcome } from '../ai/stores/preferenceProfileStore';
+import { createEventBus, EventBus } from './eventBus';
+
+// Create a reference to eventBus that will be set from runtime
+let eventBusRef: EventBus | null = null;
+
+export const setEventBusRef = (bus: EventBus) => {
+  eventBusRef = bus;
+};
 
 // ========== Diversity Tracking ==========
 
@@ -33,6 +41,7 @@ export interface DiversityTracking {
 
 const MAX_FRAGMENT_USES = 2;  // Max pieces per fragment
 const MAX_THEME_USES = 3;     // Max pieces per theme keyword
+const MIN_POOL_SIZE = 3;      // Minimum pieces per quadrant before triggering replenishment
 
 /**
  * Normalize text for comparison
@@ -75,6 +84,9 @@ interface PuzzleSessionStateStore {
   // Diversity tracking across session
   diversityTracking: DiversityTracking;
 
+  // Reactive replenishment state
+  replenishingQuadrants: Set<QuadrantType>;
+
   // Actions
   setSessionState: (state: PuzzleSessionState) => void;
   setGenerating: (generating: boolean) => void;
@@ -101,6 +113,13 @@ interface PuzzleSessionStateStore {
   isTextUsed: (text: string) => boolean;
   isFragmentOverQuota: (fragmentId: string) => boolean;
   getFragmentUsageCount: (fragmentId: string) => number;
+
+  // Reactive replenishment methods
+  getAvailablePieceCount: (quadrant: QuadrantType) => number;
+  checkAndReplenish: (quadrant: QuadrantType) => void;
+  startReplenishing: (quadrant: QuadrantType) => void;
+  finishReplenishing: (quadrant: QuadrantType, newPieces: PreGeneratedPiece[]) => void;
+  isReplenishing: (quadrant: QuadrantType) => boolean;
 
   // Phase 6: Preference feedback
   recordPieceOutcome: (
@@ -144,6 +163,8 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
   },
 
   diversityTracking: createEmptyDiversityTracking(),
+
+  replenishingQuadrants: new Set<QuadrantType>(),
 
   setSessionState: (state) => {
     // Convert session pieces to pre-generated pieces pool
@@ -352,6 +373,7 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
         function: [],
       },
       diversityTracking: createEmptyDiversityTracking(),
+      replenishingQuadrants: new Set<QuadrantType>(),
     });
   },
 
@@ -402,6 +424,93 @@ export const usePuzzleSessionStateStore = create<PuzzleSessionStateStore>((set, 
     );
 
     console.log(`[puzzleSessionStateStore] Recorded ${outcome} for piece "${text.slice(0, 30)}..." in ${quadrant}`);
+  },
+
+  // ========== Reactive Replenishment Methods ==========
+
+  getAvailablePieceCount: (quadrant) => {
+    const { preGeneratedPieces, diversityTracking } = get();
+    const pieces = preGeneratedPieces[quadrant] || [];
+
+    console.log(`[puzzleSessionStateStore] getAvailablePieceCount for ${quadrant}: total=${pieces.length}`);
+
+    // Count pieces that are unused AND pass diversity checks
+    const availableCount = pieces.filter(p => {
+      if (p.used) return false;
+
+      const normalizedText = normalizeForTracking(p.text || '');
+      if (diversityTracking.usedTexts.has(normalizedText)) return false;
+
+      if (p.fragment_id) {
+        const fragmentCount = diversityTracking.usedFragmentCounts.get(p.fragment_id) || 0;
+        if (fragmentCount >= MAX_FRAGMENT_USES) return false;
+      }
+
+      return true;
+    }).length;
+
+    console.log(`[puzzleSessionStateStore] getAvailablePieceCount for ${quadrant}: available=${availableCount}`);
+    return availableCount;
+  },
+
+  checkAndReplenish: (quadrant) => {
+    const { getAvailablePieceCount, replenishingQuadrants, sessionState } = get();
+
+    if (!sessionState) {
+      console.log(`[puzzleSessionStateStore] Cannot replenish ${quadrant} - no active session`);
+      return;
+    }
+
+    const availableCount = getAvailablePieceCount(quadrant);
+    const isAlreadyReplenishing = replenishingQuadrants.has(quadrant);
+
+    if (availableCount < MIN_POOL_SIZE && !isAlreadyReplenishing) {
+      console.log(`[puzzleSessionStateStore] Pool low for ${quadrant}: ${availableCount}/${MIN_POOL_SIZE}, requesting replenishment`);
+
+      // Emit event for orchestrator to handle
+      if (eventBusRef) {
+        eventBusRef.emitType('QUADRANT_REPLENISH_NEEDED' as any, {
+          quadrant,
+          currentCount: availableCount,
+          minRequired: MIN_POOL_SIZE
+        });
+      } else {
+        console.warn('[puzzleSessionStateStore] No eventBus reference set, cannot emit replenish event');
+      }
+    }
+  },
+
+  startReplenishing: (quadrant) => {
+    set((state) => {
+      const newReplenishing = new Set(state.replenishingQuadrants);
+      newReplenishing.add(quadrant);
+      console.log(`[puzzleSessionStateStore] Started replenishing ${quadrant}`);
+      return { replenishingQuadrants: newReplenishing };
+    });
+  },
+
+  finishReplenishing: (quadrant, newPieces) => {
+    set((state) => {
+      const existing = state.preGeneratedPieces[quadrant];
+      const combined = [...existing, ...newPieces];
+
+      const newReplenishing = new Set(state.replenishingQuadrants);
+      newReplenishing.delete(quadrant);
+
+      console.log(`[puzzleSessionStateStore] Finished replenishing ${quadrant}: added ${newPieces.length} pieces (total: ${combined.length})`);
+
+      return {
+        preGeneratedPieces: {
+          ...state.preGeneratedPieces,
+          [quadrant]: combined,
+        },
+        replenishingQuadrants: newReplenishing,
+      };
+    });
+  },
+
+  isReplenishing: (quadrant) => {
+    return get().replenishingQuadrants.has(quadrant);
   },
 }));
 

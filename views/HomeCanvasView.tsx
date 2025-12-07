@@ -20,6 +20,7 @@ import { MascotPanel } from '../components/mascot/MascotPanel';
 import { MascotProposal } from '../ai/agents/mascotAgent';
 import { PuzzleSummaryPopup } from '../components/puzzle/PuzzleSummaryPopup';
 import { WelcomeOverlay } from '../components/onboarding/WelcomeOverlay';
+import { AIStatusIndicator } from '../components/AIStatusIndicator';
 // import { ZoomControls } from '../components/canvas/ZoomControls';
 
 // --- MOCK DATA ---
@@ -171,25 +172,65 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
 
   // --- EFFECTS ---
 
-  // Toggle debug overlay with backtick key
+  // Clipboard ref for copy/paste
+  const clipboardRef = useRef<FragmentData | null>(null);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle debug overlay with backtick
       if (e.key === '`') {
         e.preventDefault();
         setShowDebug(prev => !prev);
+        return;
       }
-      // Delete fragment via Delete/Backspace when not typing in inputs
+
+      // ESC key - cancel current tool, go back to pointer
+      if (e.key === 'Escape') {
+        if (activeTool !== ToolType.POINTER) {
+          setActiveTool(ToolType.POINTER);
+          pendingImagePosition.current = null;
+          addLog('Tool cancelled - back to pointer');
+        }
+        // Also deselect
+        setSelection(null);
+        return;
+      }
+
+      // Check if typing in input
       const target = e.target as HTMLElement | null;
       const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
       if (isTyping) return;
+
+      // Delete fragment via Delete/Backspace
       if ((e.key === 'Delete' || e.key === 'Backspace') && selection) {
         setFragments(prev => prev.filter(f => f.id !== selection));
         setSelection(null);
+        return;
+      }
+
+      // Copy: Ctrl/Cmd + C
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+        e.preventDefault();
+        const fragment = fragments.find(f => f.id === selection);
+        if (fragment) {
+          clipboardRef.current = { ...fragment };
+          addLog(`Copied: ${fragment.type}`);
+        }
+        return;
+      }
+
+      // Paste: Ctrl/Cmd + V
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        handlePaste();
+        return;
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selection]);
+  }, [selection, fragments, activeTool]);
 
   // Subscribe to store changes so UI can reflect agent-updated summaries/tags and summaries
   useEffect(() => {
@@ -541,19 +582,70 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const url = event.target?.result as string;
-        if (pendingImagePosition.current) {
-          createFragment(FragmentType.IMAGE, pendingImagePosition.current.x, pendingImagePosition.current.y, url);
-          pendingImagePosition.current = null;
-          setActiveTool(ToolType.POINTER);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!file) {
+      // User cancelled file selection - go back to pointer
+      setActiveTool(ToolType.POINTER);
+      pendingImagePosition.current = null;
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const url = event.target?.result as string;
+      if (pendingImagePosition.current) {
+        createFragment(FragmentType.IMAGE, pendingImagePosition.current.x, pendingImagePosition.current.y, url);
+        pendingImagePosition.current = null;
+        setActiveTool(ToolType.POINTER);
+      }
+    };
+    reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Handle paste - from internal clipboard or external image
+  const handlePaste = async () => {
+    try {
+      // Try to read from system clipboard first (for external images)
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        // Check for image types
+        const imageType = item.types.find(type => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const url = URL.createObjectURL(blob);
+
+          // Calculate paste position (center of viewport)
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (rect) {
+            const centerX = (rect.width / 2 - offset.x) / scale;
+            const centerY = (rect.height / 2 - offset.y) / scale;
+            createFragment(FragmentType.IMAGE, centerX, centerY, url);
+            addLog('Pasted image from clipboard');
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      // Clipboard API might not be available or permission denied
+      console.debug('Clipboard read failed, trying internal clipboard');
+    }
+
+    // Fallback to internal clipboard
+    if (clipboardRef.current) {
+      const source = clipboardRef.current;
+      // Offset position slightly so it's visible
+      const newX = source.position.x + 20;
+      const newY = source.position.y + 20;
+
+      const newId = createFragment(source.type, newX, newY, source.content, source.size);
+      // Copy title if exists
+      if (source.title) {
+        setFragments(prev => prev.map(f =>
+          f.id === newId ? { ...f, title: source.title } : f
+        ));
+      }
+      addLog(`Pasted: ${source.type}`);
+    }
   };
 
   // --- RENDER ---
@@ -657,9 +749,14 @@ export const HomeCanvasView: React.FC<HomeCanvasViewProps> = ({ onEnterPuzzle })
         />
       )}
 
-      {/* Hint for Controls */}
-      <div className="absolute bottom-4 right-4 z-40 text-gray-500 text-xs font-mono bg-purple-50/80 backdrop-blur-sm p-2 rounded pointer-events-none">
-        Middle Click / Space+Drag to Pan | Scroll to Zoom | Click puzzle card to enter
+      {/* Hint for Controls - glassmorphic, bottom-right */}
+      <div className="absolute bottom-4 right-4 z-40 text-gray-600/70 text-[10px] font-mono bg-white/30 backdrop-blur-md border border-white/40 px-3 py-1.5 rounded-full shadow-sm pointer-events-none">
+        Space+Drag to Pan · Scroll to Zoom · Click card to enter
+      </div>
+
+      {/* AI Status Indicator - moved to top-right, left of zoom area */}
+      <div className="fixed top-20 right-4 z-50">
+        <AIStatusIndicator />
       </div>
 
       {/* Mascot Button */}

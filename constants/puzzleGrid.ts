@@ -21,9 +21,10 @@ export const QUADRANTS = {
   BR: 'Function',
 };
 
-// Center card dimensions in grid units (MUST be even for perfect grid alignment)
+// Center card dimensions in grid units
+// 4×4 square for balanced layout
 export const CENTER_CARD_WIDTH = 4;
-export const CENTER_CARD_HEIGHT = 2;
+export const CENTER_CARD_HEIGHT = 4;
 
 // Shapes 1-8 from the reference guide
 export const SHAPES = {
@@ -101,4 +102,14 @@ export const getShapeForText = (text: string): { x: number; y: number }[] => {
 export const getRandomShapeFromCategory = (category: 'tall' | 'wide'): { x: number; y: number }[] => {
   const shapes = category === 'tall' ? TALL_SHAPES : WIDE_SHAPES;
   return shapes[Math.floor(Math.random() * shapes.length)];
+};
+
+/**
+ * Get shape sequentially based on attachment index
+ * Cycles through ALL_SHAPES in order for consistent visual variety
+ * @param attachmentIndex The index of the piece being attached (0-based)
+ * @returns Shape cells array
+ */
+export const getSequentialShape = (attachmentIndex: number): { x: number; y: number }[] => {
+  return ALL_SHAPES[attachmentIndex % ALL_SHAPES.length];
 };

@@ -14,5 +14,11 @@ export type {
   PotentialQuestion
 } from './insightPrecomputer';
 
+export { piecePrecomputer } from './piecePrecomputer';
+export type {
+  PrecomputedPieces,
+  PiecePrecomputerStatus
+} from './piecePrecomputer';
+
 export { serviceManager } from './serviceManager';
 export type { ServiceStatus } from './serviceManager';

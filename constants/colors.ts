@@ -14,47 +14,49 @@ export const QUADRANT_COLORS = {
   FUNCTION: '#FB07AA',    // Pink/Magenta - What it does
 } as const;
 
-// Quadrant colors - full palette (light to dark)
-// Based on ColorPallate.png: Blue=FORM, Green=MOTION, Purple=EXPRESSION, Pink=FUNCTION
+// Quadrant colors - 5-color palette per quadrant (light to dark)
+// Based on Figma/colors/Group 42.png
 export const QUADRANT_PALETTE = {
   FORM: {
-    // Blue palette for FORM (How it looks)
-    100: '#C0E5EB',
-    200: '#87BEF7',
-    300: '#7496E9',
-    400: '#5E5BFF',
-    500: '#5354ED',  // Primary
-    600: '#3544E0',
-    700: '#1244C5',
+    // Blue palette for FORM (Shape, structure, composition)
+    1: '#C0E5EB',  // Lightest
+    2: '#87BEF7',
+    3: '#7496E9',  // Primary
+    4: '#5354ED',
+    5: '#3544E0',  // Darkest
   },
   MOTION: {
-    // Green palette for MOTION (How it moves)
-    100: '#C9F9DF',
-    200: '#87E8B5',
-    300: '#00DE8C',
-    400: '#00A650',
-    500: '#169B2F',  // Primary
-    600: '#0A6439',
-    700: '#193E18',
+    // Green palette for MOTION (Rhythm, animation, timing)
+    1: '#C9F9DF',  // Lightest
+    2: '#00DE8C',
+    3: '#00A650',  // Primary
+    4: '#169B2F',
+    5: '#0A6439',  // Darkest
   },
   EXPRESSION: {
-    100: '#E0DEF8',
-    200: '#C4ADFD',
-    300: '#B4ABFA',
-    400: '#746DD8',
-    500: '#8E34FE',  // Primary (actual bright purple)
-    600: '#923CFF',
-    700: '#532ACC',
+    // Purple palette for EXPRESSION (Emotion, tone, personality)
+    1: '#E0DEF8',  // Lightest
+    2: '#C4ADFD',
+    3: '#746DD8',  // Primary
+    4: '#923CFF',
+    5: '#532ACC',  // Darkest
   },
   FUNCTION: {
-    100: '#FFD5FF',
-    200: '#FFB5FA',
-    300: '#FEA1E6',
-    400: '#FE93F1',
-    500: '#FB07AA',  // Primary
-    600: '#E91D26',
-    700: '#AF0C21',
+    // Pink palette for FUNCTION (Audience, context, usability)
+    1: '#FFD5FF',  // Lightest
+    2: '#FFB5FA',
+    3: '#FEA1E6',  // Primary
+    4: '#FE93F1',
+    5: '#FB07AA',  // Darkest
   },
+} as const;
+
+// Quadrant color arrays for sequential piece placement (5 colors each, dark to light)
+export const QUADRANT_GRADIENTS = {
+  FORM: ['#3544E0', '#5354ED', '#7496E9', '#87BEF7', '#C0E5EB'],      // Blue
+  MOTION: ['#0A6439', '#169B2F', '#00A650', '#00DE8C', '#C9F9DF'],    // Green
+  EXPRESSION: ['#532ACC', '#923CFF', '#746DD8', '#C4ADFD', '#E0DEF8'],
+  FUNCTION: ['#FB07AA', '#FE93F1', '#FEA1E6', '#FFB5FA', '#FFD5FF'],
 } as const;
 
 // System colors
@@ -94,32 +96,26 @@ export const getQuadrantColor = (mode: DesignMode | QuadrantType): string => {
 };
 
 /**
- * Get color by priority level (1-6)
- * Priority 1-2: High saturation (row 500-600 in palette)
- * Priority 3-4: Medium saturation (row 300-400)
- * Priority 5-6: Low saturation (row 100-200)
+ * Get color by priority level (1-5)
+ * Maps directly to the 5-color palette
  */
-export type PiecePriority = 1 | 2 | 3 | 4 | 5 | 6;
+export type PiecePriority = 1 | 2 | 3 | 4 | 5;
 export type SaturationLevel = 'high' | 'medium' | 'low';
 
-export const priorityToSaturation = (priority: PiecePriority): SaturationLevel => {
-  if (priority <= 2) return 'high';
-  if (priority <= 4) return 'medium';
+/**
+ * Map priority to saturation level for legacy compatibility
+ * 1-2: high (dark colors), 3: medium (mid colors), 4-5: low (light colors)
+ */
+export const priorityToSaturation = (priority: PiecePriority | number): SaturationLevel => {
+  const p = Math.max(1, Math.min(5, priority)) as PiecePriority;
+  if (p <= 2) return 'high';
+  if (p <= 3) return 'medium';
   return 'low';
 };
 
 export const getPriorityColor = (mode: DesignMode, priority: PiecePriority): string => {
   const palette = QUADRANT_PALETTE[mode];
-  const saturation = priorityToSaturation(priority);
-
-  switch (saturation) {
-    case 'high':
-      return priority === 1 ? palette[600] : palette[500];
-    case 'medium':
-      return priority === 3 ? palette[400] : palette[300];
-    case 'low':
-      return priority === 5 ? palette[200] : palette[100];
-  }
+  return palette[priority];
 };
 
 /**
@@ -132,8 +128,25 @@ export const getAllPriorityColors = (mode: DesignMode): Record<PiecePriority, st
     3: getPriorityColor(mode, 3),
     4: getPriorityColor(mode, 4),
     5: getPriorityColor(mode, 5),
-    6: getPriorityColor(mode, 6),
   };
+};
+
+/**
+ * Get color for a quadrant based on attachment order
+ * @param mode The design mode (FORM, MOTION, EXPRESSION, FUNCTION)
+ * @param attachmentIndex The index of the piece being attached (0-based)
+ * @returns Hex color string
+ *
+ * With 5 colors per quadrant, pieces cycle through colors:
+ * - Index 0: darkest color
+ * - Index 1-4: progressively lighter
+ * - Index 5+: wraps back to start
+ */
+export const getSequentialColor = (mode: DesignMode, attachmentIndex: number): string => {
+  const gradient = QUADRANT_GRADIENTS[mode];
+  // Cycle through 5 colors
+  const colorIndex = attachmentIndex % 5;
+  return gradient[colorIndex];
 };
 
 // Calculate desaturated color based on distance from center

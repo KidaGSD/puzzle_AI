@@ -6,11 +6,12 @@
  * Exposes ready state for UI indicators.
  */
 
-import { Fragment } from "../../../domain/models";
+import { Fragment, PuzzleType, Anchor } from "../../../domain/models";
 import { EventBus } from "../../../store/eventBus";
 import { ContextStore } from "../../../store/contextStore";
 import { contextCollector, FragmentFeature } from "./contextCollector";
 import { insightPrecomputer, PrecomputedInsights, EnrichedFragment } from "./insightPrecomputer";
+import { piecePrecomputer, PrecomputedPieces, PiecePrecomputerStatus } from "./piecePrecomputer";
 
 // ========== Types ==========
 
@@ -18,7 +19,9 @@ export interface ServiceStatus {
   isReady: boolean;
   contextReady: boolean;
   insightsReady: boolean;
+  piecesReady: boolean;
   fragmentCount: number;
+  pieceCount: number;
   lastUpdated: number;
 }
 
@@ -28,6 +31,7 @@ export class ServiceManager {
   private started: boolean = false;
   private eventUnsubscribe: (() => void) | null = null;
   private storeUnsubscribe: (() => void) | null = null;
+  private contextReadyUnsubscribe: (() => void) | null = null;
   private store: ContextStore | null = null;
 
   // ========== Public API ==========
@@ -71,7 +75,31 @@ export class ServiceManager {
     const processAim = state.project.processAim;
     insightPrecomputer.startPeriodicRecompute(fragmentsGetter, processAim);
 
-    console.log('[ServiceManager] Background services started');
+    // EVENT-DRIVEN: Subscribe to context ready events for immediate precomputation
+    this.contextReadyUnsubscribe = contextCollector.onReady(async () => {
+      const currentState = store.getState();
+      const currentProcessAim = currentState.project.processAim;
+      console.log('[ServiceManager] Context ready - triggering immediate insight recomputation');
+
+      // Step 1: Recompute insights
+      await insightPrecomputer.recompute(currentState.fragments, currentProcessAim);
+
+      // Step 2: If insights are ready and we have enough fragments, precompute pieces
+      const insights = insightPrecomputer.getInsights();
+      const enrichedFragments = this.getEnrichedFragments();
+      if (insights && enrichedFragments && enrichedFragments.length >= 2) {
+        console.log('[ServiceManager] Insights ready - triggering piece precomputation');
+        await piecePrecomputer.precomputePieces(
+          insights,
+          enrichedFragments,
+          currentProcessAim,
+          'CLARIFY', // Default puzzle type
+          []
+        );
+      }
+    });
+
+    console.log('[ServiceManager] Background services started with event-driven precomputation');
   }
 
   /**
@@ -90,6 +118,11 @@ export class ServiceManager {
     if (this.storeUnsubscribe) {
       this.storeUnsubscribe();
       this.storeUnsubscribe = null;
+    }
+
+    if (this.contextReadyUnsubscribe) {
+      this.contextReadyUnsubscribe();
+      this.contextReadyUnsubscribe = null;
     }
 
     insightPrecomputer.stopPeriodicRecompute();
@@ -111,12 +144,19 @@ export class ServiceManager {
    */
   getStatus(): ServiceStatus {
     const contextStatus = contextCollector.getStatus();
+    const pieceStatus = piecePrecomputer.getStatus();
+    const totalPieces = pieceStatus.pieceCount.FORM +
+                        pieceStatus.pieceCount.MOTION +
+                        pieceStatus.pieceCount.EXPRESSION +
+                        pieceStatus.pieceCount.FUNCTION;
     return {
-      isReady: contextCollector.isReady,
+      isReady: contextCollector.isReady && piecePrecomputer.isReady,
       contextReady: contextCollector.isReady,
       insightsReady: insightPrecomputer.isReady,
+      piecesReady: piecePrecomputer.isReady,
       fragmentCount: contextStatus.fragmentCount,
-      lastUpdated: contextStatus.lastUpdated
+      pieceCount: totalPieces,
+      lastUpdated: Math.max(contextStatus.lastUpdated, pieceStatus.lastComputed)
     };
   }
 
@@ -171,7 +211,28 @@ export class ServiceManager {
   }
 
   /**
-   * Force immediate recomputation of insights
+   * Get precomputed pieces (instant access for puzzle creation)
+   */
+  getPrecomputedPieces(): PrecomputedPieces | null {
+    return piecePrecomputer.getCachedPieces();
+  }
+
+  /**
+   * Check if pieces are ready for given fragments
+   */
+  arePiecesReadyFor(fragments: EnrichedFragment[]): boolean {
+    return piecePrecomputer.isCacheValidFor(fragments);
+  }
+
+  /**
+   * Get piece precomputer status
+   */
+  getPieceStatus(): PiecePrecomputerStatus {
+    return piecePrecomputer.getStatus();
+  }
+
+  /**
+   * Force immediate recomputation of insights and pieces
    */
   async forceRecompute(): Promise<void> {
     if (!this.store) return;
@@ -179,6 +240,19 @@ export class ServiceManager {
     const state = this.store.getState();
     await contextCollector.processImmediately(state.fragments);
     await insightPrecomputer.recompute(state.fragments, state.project.processAim);
+
+    // Also recompute pieces
+    const insights = insightPrecomputer.getInsights();
+    const enrichedFragments = this.getEnrichedFragments();
+    if (insights && enrichedFragments && enrichedFragments.length >= 2) {
+      await piecePrecomputer.precomputePieces(
+        insights,
+        enrichedFragments,
+        state.project.processAim,
+        'CLARIFY',
+        []
+      );
+    }
   }
 }
 

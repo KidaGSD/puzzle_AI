@@ -270,17 +270,14 @@ export function MascotPanel({ isOpen, onClose, proposal, onStartPuzzle }: Mascot
                     {proposal.centralQuestion}
                   </h3>
 
-                  <p className="text-sm text-gray-600 mb-4 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
-                    {proposal.rationale}
+                  {/* Simplified rationale - truncated to 80 chars */}
+                  <p className="text-sm text-gray-600 mb-6 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    {proposal.rationale && proposal.rationale.length > 80
+                      ? proposal.rationale.slice(0, 77) + '...'
+                      : proposal.rationale || 'Based on your fragments'}
                   </p>
 
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    {proposal.primaryModes.map(mode => (
-                      <span key={mode} className="px-2 py-1 rounded-md bg-gray-100 text-gray-600 text-xs font-medium border border-gray-200">
-                        {mode}
-                      </span>
-                    ))}
-                  </div>
+                  {/* primaryModes removed - too technical for users */}
 
                   <div className="grid grid-cols-2 gap-3">
                     <button

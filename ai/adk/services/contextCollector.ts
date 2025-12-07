@@ -122,6 +122,9 @@ const IMAGE_FEATURE_SCHEMA: JsonSchema = {
 
 // ========== ContextCollector Class ==========
 
+// Event callback type for notifying when context is ready
+type ContextReadyCallback = () => void;
+
 export class ContextCollector {
   private cache: ContextCache;
   private flashClient: LLMClient;
@@ -129,6 +132,7 @@ export class ContextCollector {
   private pendingFragmentIds: Set<string> = new Set();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly DEBOUNCE_MS = 500;
+  private onReadyCallbacks: ContextReadyCallback[] = [];
 
   constructor() {
     this.cache = {
@@ -216,6 +220,35 @@ export class ContextCollector {
     };
   }
 
+  /**
+   * Register callback to be notified when context becomes ready
+   * This enables event-driven precomputation instead of polling
+   */
+  onReady(callback: ContextReadyCallback): () => void {
+    this.onReadyCallbacks.push(callback);
+    // Return unsubscribe function
+    return () => {
+      const index = this.onReadyCallbacks.indexOf(callback);
+      if (index > -1) {
+        this.onReadyCallbacks.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Notify all registered callbacks that context is ready
+   */
+  private notifyReady(): void {
+    console.log(`[ContextCollector] Notifying ${this.onReadyCallbacks.length} callbacks that context is ready`);
+    for (const callback of this.onReadyCallbacks) {
+      try {
+        callback();
+      } catch (err) {
+        console.warn('[ContextCollector] Callback error:', err);
+      }
+    }
+  }
+
   // ========== Internal Processing ==========
 
   private async processFragments(fragments: Fragment[]): Promise<void> {
@@ -252,10 +285,16 @@ export class ContextCollector {
       // Update cache metadata
       this.cache.lastUpdated = Date.now();
       this.cache.fragmentCount = this.cache.fragmentFeatures.size;
+      const wasReady = this.cache.isReady;
       this.cache.isReady = this.cache.fragmentCount > 0;
 
       const duration = Date.now() - startTime;
       console.log(`[ContextCollector] Processed ${fragments.length} fragments in ${duration}ms`);
+
+      // Notify listeners when context becomes ready (or is updated)
+      if (this.cache.isReady) {
+        this.notifyReady();
+      }
 
     } catch (error) {
       console.error('[ContextCollector] Processing error:', error);

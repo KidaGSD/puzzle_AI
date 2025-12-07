@@ -134,6 +134,7 @@ export type UIEventType =
   | "PUZZLE_SESSION_STARTED"    // Triggers full puzzle pre-generation
   | "PUZZLE_SESSION_COMPLETED"  // Session finished, aggregate preferences
   | "QUADRANT_REGENERATE"       // Regenerate a single quadrant
+  | "QUADRANT_REPLENISH_NEEDED" // Pool low, needs replenishment
   // Output events from orchestrator
   | "PUZZLE_SESSION_GENERATED"  // Pre-generated pieces ready
   | "QUADRANT_REGENERATED"      // Single quadrant regenerated

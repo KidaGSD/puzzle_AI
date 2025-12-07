@@ -42,14 +42,20 @@ import { v4 as uuidv4 } from "uuid";
 /**
  * Create a new puzzle session with initial state
  * Uses real Set/Map for tracking, with serialization helpers
+ * @param userId - The user ID
+ * @param processAim - The process aim
+ * @param puzzleType - The puzzle type
+ * @param centralQuestion - The central question (can be empty initially)
+ * @param existingSessionId - Optional existing session ID to reuse (prevents duplicate cards)
  */
 export const createPuzzleSession = (
   userId: string,
   processAim: string,
   puzzleType: PuzzleType,
-  centralQuestion: string
+  centralQuestion: string,
+  existingSessionId?: string
 ): Session => {
-  const sessionId = uuidv4();
+  const sessionId = existingSessionId || uuidv4();
 
   // Create session with properly structured state
   const session = new Session({
@@ -125,6 +131,7 @@ export const startPuzzleSession = async (
     processAim: string;
     puzzleType: PuzzleType;
     centralQuestion?: string;
+    existingPuzzleId?: string; // Use existing ID to prevent duplicate card creation
     fragments: Fragment[];
     anchors: Anchor[];
     preferenceProfile: UserPreferenceProfile;
@@ -134,10 +141,12 @@ export const startPuzzleSession = async (
   const errors: string[] = [];
   const startTime = Date.now();
 
-  console.log(`[PuzzleRunner] Starting ADK session: type=${input.puzzleType}, fragments=${input.fragments.length}`);
+  // Use existing puzzle ID if provided, otherwise generate new
+  const puzzleId = input.existingPuzzleId || uuidv4();
+  console.log(`[PuzzleRunner] Starting ADK session: type=${input.puzzleType}, fragments=${input.fragments.length}, puzzleId=${puzzleId} (existing: ${!!input.existingPuzzleId})`);
 
-  // Create session with initial state
-  const session = createPuzzleSession('user', input.processAim, input.puzzleType, '');
+  // Create session with initial state - use the resolved puzzleId
+  const session = createPuzzleSession('user', input.processAim, input.puzzleType, '', puzzleId);
   session.state.set('fragments', input.fragments);
   session.state.set('llmClient', client);
   session.state.set('preferenceProfile', input.preferenceProfile);
@@ -145,7 +154,32 @@ export const startPuzzleSession = async (
   const toolContext = createToolContext(session);
   await clearPool({}, toolContext);
 
-  // ========== Check for precomputed insights (instant if available) ==========
+  // ========== Check for precomputed PIECES (fastest path) ==========
+  const precomputedPieces = serviceManager.getPrecomputedPieces();
+  if (precomputedPieces && precomputedPieces.isValid) {
+    const age = Date.now() - precomputedPieces.timestamp;
+    console.log(`[PuzzleRunner] ⚡⚡ Using PRECOMPUTED PIECES (age: ${age}ms) - INSTANT SESSION!`);
+
+    // Use precomputed pieces directly - no need to run any agents!
+    const totalPieces = Object.values(precomputedPieces.pieces).reduce(
+      (sum, arr) => sum + arr.length, 0
+    );
+
+    console.log(`[PuzzleRunner] Returning ${totalPieces} precomputed pieces instantly`);
+
+    return {
+      sessionState: {
+        session_id: session.id,
+        puzzle_type: input.puzzleType,
+        central_question: precomputedPieces.centralQuestion,
+        pre_gen_pieces: precomputedPieces.pieces,
+        quality_score: precomputedPieces.qualityScore
+      },
+      errors: []
+    };
+  }
+
+  // ========== Check for precomputed insights (medium-fast path) ==========
   const precomputed = serviceManager.getPrecomputedInsights();
   const precomputedFragments = serviceManager.getEnrichedFragments();
   const usePrecomputed = precomputed && !precomputed.isStale && precomputedFragments;
@@ -398,7 +432,7 @@ const runQuadrantForSession = async (
     relevantFragments: enrichedFragments,
     existingPieces: [],
     anchors: anchors.map(a => ({ type: a.type as 'STARTING' | 'SOLUTION', text: a.text })),
-    requestedCount: 6, // Over-generate, then filter
+    requestedCount: 8, // Over-generate, then filter to ~5-6
     maxTotalChars: 200,
     preferenceHints: preferenceHint
   };

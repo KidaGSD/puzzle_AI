@@ -3,8 +3,6 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { motion, useAnimation, AnimatePresence } from 'framer-motion';
 import { Piece, Position } from '../../types';
 import { CELL_SIZE } from '../../constants/puzzleGrid';
-import { getDistanceAdjustedColor, getPriorityColor } from '../../constants/colors';
-import { DesignMode } from '../../domain/models';
 import { useGameStore } from '../../store/puzzleSessionStore';
 
 interface PuzzlePieceProps {
@@ -181,50 +179,154 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
   const x = (data.position.x + minX) * CELL_SIZE;
   const y = (data.position.y + minY) * CELL_SIZE;
 
-  // Calculate color based on priority (if available) or distance from center
+  // Use the piece's assigned color directly (supports sequential coloring)
   const adjustedColor = useMemo(() => {
-    // If piece has priority, use priority-based color
-    if (data.priority) {
-      const mode = data.quadrant.toUpperCase() as DesignMode;
-      return getPriorityColor(mode, data.priority);
+    // Always use the color assigned to the piece
+    // This allows sequential color gradients to work properly
+    return data.color;
+  }, [data.color]);
+
+  // Find the largest rectangle within the shape for text placement
+  const textBoundingBox = useMemo(() => {
+    // Create a grid representation of the shape
+    const grid: boolean[][] = [];
+    const gridWidth = maxX - minX + 1;
+    const gridHeight = maxY - minY + 1;
+
+    // Initialize grid with false
+    for (let y = 0; y < gridHeight; y++) {
+      grid[y] = new Array(gridWidth).fill(false);
     }
-    // Fallback to distance-based color adjustment
-    const centerX = data.position.x + (maxX - minX + 1) / 2;
-    const centerY = data.position.y + (maxY - minY + 1) / 2;
-    const distance = Math.sqrt(centerX * centerX + centerY * centerY);
-    return getDistanceAdjustedColor(data.color, distance);
-  }, [data.priority, data.quadrant, data.color, data.position.x, data.position.y, maxX, minX, maxY, minY]);
 
-  // Find center of mass for text placement
-  const centerOfMass = useMemo(() => {
-    const sumX = normalizedCells.reduce((sum, c) => sum + c.x, 0);
-    const sumY = normalizedCells.reduce((sum, c) => sum + c.y, 0);
-    return {
-      x: (sumX / normalizedCells.length + 0.5) * CELL_SIZE,
-      y: (sumY / normalizedCells.length + 0.5) * CELL_SIZE,
+    // Mark cells that are part of the shape
+    normalizedCells.forEach(cell => {
+      grid[cell.y][cell.x] = true;
+    });
+
+    // Find largest inscribed rectangle
+    let maxArea = 0;
+    let bestRect = { x: 0, y: 0, width: 1, height: 1 };
+
+    // Try each possible starting position
+    for (let startY = 0; startY < gridHeight; startY++) {
+      for (let startX = 0; startX < gridWidth; startX++) {
+        if (!grid[startY][startX]) continue;
+
+        // Try different rectangle sizes from this start point
+        let maxWidth = gridWidth - startX;
+
+        for (let h = 1; h <= gridHeight - startY; h++) {
+          // Find width of valid rectangle at this height
+          let w = 0;
+          for (let x = startX; x < startX + maxWidth; x++) {
+            let validColumn = true;
+            for (let y = startY; y < startY + h; y++) {
+              if (!grid[y][x]) {
+                validColumn = false;
+                break;
+              }
+            }
+            if (validColumn) {
+              w++;
+            } else {
+              break;
+            }
+          }
+
+          if (w > 0) {
+            const area = w * h;
+            if (area > maxArea) {
+              maxArea = area;
+              bestRect = { x: startX, y: startY, width: w, height: h };
+            }
+            maxWidth = w; // Narrow search for next row
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    // Convert grid coordinates to pixel coordinates
+    const pixelRect = {
+      x: bestRect.x * CELL_SIZE,
+      y: bestRect.y * CELL_SIZE,
+      width: bestRect.width * CELL_SIZE,
+      height: bestRect.height * CELL_SIZE,
+      centerX: (bestRect.x + bestRect.width / 2) * CELL_SIZE,
+      centerY: (bestRect.y + bestRect.height / 2) * CELL_SIZE,
     };
-  }, [normalizedCells]);
 
-  // Calculate shape aspect ratio and text layout - ALWAYS HORIZONTAL
+    return pixelRect;
+  }, [normalizedCells, maxX, minX, maxY, minY]);
+
+  // Calculate text layout based on the inscribed rectangle
+  // Optimized for readability with larger fonts and shape-specific strategies
   const textLayout = useMemo(() => {
-    const shapeWidth = maxX - minX + 1;
-    const shapeHeight = maxY - minY + 1;
-    const aspectRatio = shapeWidth / shapeHeight;
+    const aspectRatio = textBoundingBox.width / textBoundingBox.height;
+    const text = displayTitle || '';
+    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+    const charCount = text.length;
 
-    // Determine if shape is tall (vertical) or wide (horizontal)
-    const isTall = aspectRatio < 1;
+    // Shape classification: tall, square, or wide
+    const isTall = aspectRatio < 0.8;
     const isWide = aspectRatio > 1.5;
-    const isSquare = aspectRatio >= 1 && aspectRatio <= 1.5;
+    const isSquare = !isTall && !isWide;
 
-    // Adaptive text container - use full shape area
-    const containerWidth = width * 0.9;
-    const containerHeight = height * 0.85;
+    // Use 90% of the inscribed rectangle for better space utilization
+    const containerWidth = textBoundingBox.width * 0.90;
+    const containerHeight = textBoundingBox.height * 0.90;
 
-    // Adaptive font size: smaller for tall shapes to fit more lines
-    const fontSize = isTall ? 8 : isWide ? 11 : 10;
+    // === ADAPTIVE FONT SIZE CALCULATION ===
+    // Base size depends on shape type, then adjusted by text length
+    let baseFontSize: number;
+    let lineHeight: number;
+    let maxLines: number;
 
-    // Line height: tighter for tall shapes
-    const lineHeight = isTall ? 1.1 : 1.2;
+    if (isTall) {
+      // TALL SHAPES: vertical orientation, more lines allowed
+      // Base: 10-14px range
+      baseFontSize = Math.max(10, Math.min(14, containerHeight / 6));
+      lineHeight = 1.15;
+      maxLines = Math.min(5, Math.floor(containerHeight / (baseFontSize * lineHeight)));
+    } else if (isWide) {
+      // WIDE SHAPES: horizontal orientation, prefer single/double line
+      // Base: 14-18px range for high readability
+      baseFontSize = Math.max(14, Math.min(18, containerWidth / 10));
+      lineHeight = 1.25;
+      maxLines = 2;
+    } else {
+      // SQUARE SHAPES: balanced, good for medium text
+      // Base: 12-16px range
+      baseFontSize = Math.max(12, Math.min(16, Math.min(containerWidth, containerHeight) / 5));
+      lineHeight = 1.2;
+      maxLines = 3;
+    }
+
+    // === TEXT LENGTH ADJUSTMENT ===
+    // Short text gets larger font, long text gets smaller
+    let fontSize = baseFontSize;
+    if (wordCount <= 2) {
+      // Very short: boost font size
+      fontSize = Math.min(baseFontSize * 1.3, isWide ? 20 : 18);
+    } else if (wordCount <= 4) {
+      // Short: slight boost
+      fontSize = Math.min(baseFontSize * 1.1, isWide ? 18 : 16);
+    } else if (wordCount > 6 || charCount > 40) {
+      // Long text: reduce to fit
+      fontSize = Math.max(baseFontSize * 0.85, isTall ? 10 : 12);
+    }
+
+    // Ensure font size fits within container constraints
+    // Max chars per line estimate: containerWidth / (fontSize * 0.6)
+    const estimatedCharsPerLine = containerWidth / (fontSize * 0.55);
+    const estimatedLines = Math.ceil(charCount / estimatedCharsPerLine);
+
+    // If text would exceed maxLines, reduce font size
+    if (estimatedLines > maxLines && fontSize > 10) {
+      const reductionFactor = Math.sqrt(maxLines / estimatedLines);
+      fontSize = Math.max(10, fontSize * reductionFactor);
+    }
 
     return {
       isTall,
@@ -232,10 +334,13 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
       isSquare,
       containerWidth,
       containerHeight,
-      fontSize,
+      fontSize: Math.round(fontSize * 10) / 10, // Round to 1 decimal
       lineHeight,
+      maxLines,
+      centerX: textBoundingBox.centerX,
+      centerY: textBoundingBox.centerY,
     };
-  }, [maxX, minX, maxY, minY, width, height]);
+  }, [textBoundingBox, displayTitle]);
 
   const handleDragStart = () => {
     setIsDragging(true);
@@ -501,12 +606,12 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
 
         {/* Content indicator - REMOVED: no longer showing "i" icon */}
 
-        {/* Title/Content Overlay - Adaptive to shape dimensions */}
+        {/* Title/Content Overlay - Using inscribed rectangle */}
         <div
           className="absolute flex items-center justify-center pointer-events-none"
           style={{
-            left: centerOfMass.x - textLayout.containerWidth / 2,
-            top: centerOfMass.y - textLayout.containerHeight / 2,
+            left: textLayout.centerX - textLayout.containerWidth / 2,
+            top: textLayout.centerY - textLayout.containerHeight / 2,
             width: textLayout.containerWidth,
             height: textLayout.containerHeight,
           }}
@@ -519,9 +624,13 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
               onChange={(e) => setEditText(e.target.value)}
               onBlur={handleEditSave}
               onKeyDown={handleEditKeyDown}
-              className="w-full bg-white/95 text-gray-800 text-xs font-bold uppercase tracking-wider text-center rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 pointer-events-auto shadow-lg"
+              className="w-full bg-white/95 text-gray-800 text-xs font-bold tracking-wider text-center rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 pointer-events-auto shadow-lg"
               placeholder="Title"
-              style={{ minWidth: '100px' }}
+              style={{
+                minWidth: '60px',
+                fontSize: `${Math.min(12, textLayout.fontSize + 2)}px`,
+                textTransform: 'capitalize',
+              }}
             />
           ) : data.imageUrl ? (
             <div className="relative w-full h-full flex flex-col items-center justify-center gap-1">
@@ -535,14 +644,27 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
                 }}
               />
               {/* Title overlay */}
-              <div className="relative bg-black/60 rounded-lg px-2 py-1 backdrop-blur-sm">
-                <span className="text-white font-bold text-[10px] uppercase tracking-wider text-center drop-shadow-lg">
+              <div className="relative bg-black/60 rounded-lg px-2 py-1 backdrop-blur-sm max-w-full">
+                <span
+                  className="text-white font-bold tracking-wider text-center drop-shadow-lg block"
+                  style={{
+                    fontSize: `${Math.max(8, textLayout.fontSize - 1)}px`,
+                    lineHeight: textLayout.lineHeight,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflowWrap: 'break-word',
+                    wordBreak: 'normal',
+                    textTransform: 'capitalize',
+                  }}
+                >
                   {displayTitle || 'Image'}
                 </span>
               </div>
               {/* Small image icon indicator */}
               <div className="relative text-white/70">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                   <circle cx="8.5" cy="8.5" r="1.5"/>
                   <polyline points="21,15 16,10 5,21"/>
@@ -551,24 +673,25 @@ export const PuzzlePiece: React.FC<PuzzlePieceProps> = ({ data }) => {
             </div>
           ) : displayTitle ? (
             <span
-              className="text-white font-bold uppercase tracking-wider text-center drop-shadow-lg px-1"
+              className="text-white font-bold tracking-wider text-center drop-shadow-lg block"
               style={{
                 fontSize: `${textLayout.fontSize}px`,
                 lineHeight: textLayout.lineHeight,
-                maxWidth: `${textLayout.containerWidth}px`,
-                maxHeight: `${textLayout.containerHeight}px`,
+                width: '100%',
                 overflow: 'hidden',
                 display: '-webkit-box',
-                WebkitLineClamp: textLayout.isTall ? 4 : 2,
+                WebkitLineClamp: textLayout.maxLines,
                 WebkitBoxOrient: 'vertical',
-                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                wordBreak: 'normal',
+                textTransform: 'capitalize',
               }}
             >
               {displayTitle}
             </span>
           ) : (
-            <span className="text-white/60 font-medium text-[9px] uppercase tracking-wider text-center">
-              Double-click
+            <span className="text-white/60 font-medium text-[9px] tracking-wider text-center" style={{ textTransform: 'capitalize' }}>
+              Double-Click
             </span>
           )}
         </div>

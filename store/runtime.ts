@@ -6,9 +6,14 @@ import { attachOrchestrator, setMascotCallback } from "../ai/orchestrator";
 import { attachOrchestratorStub } from "../ai/orchestratorStub";
 import { MascotProposal } from "../ai/agents/mascotAgent";
 import { MATCHA_PROJECT, loadMockFragments } from "../services/mockDataLoader";
-import { usePuzzleSessionStateStore } from "./puzzleSessionStateStore";
+import { usePuzzleSessionStateStore, setEventBusRef } from "./puzzleSessionStateStore";
+import { useGameStore } from "./puzzleSessionStore";
 // Background AI Services
 import { serviceManager, PrecomputedInsights, EnrichedFragment } from "../ai/adk/services";
+
+// ========== Session Recovery Constants ==========
+const SESSION_STORAGE_KEY = 'puzzle_session_recovery';
+const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
 // Use the matcha brand project as default
 const defaultProject: Project = MATCHA_PROJECT;
@@ -44,6 +49,9 @@ console.log('[runtime] Auto-initializing mock data...');
 initializeMockData();
 
 export const eventBus = createEventBus();
+
+// Set eventBus reference for puzzleSessionStateStore to use
+setEventBusRef(eventBus);
 
 // ========== Background AI Services ==========
 
@@ -201,9 +209,16 @@ export const ensurePuzzleSessionStateSync = () => {
 
 /**
  * Start a new puzzle session with pre-generation
+ * @param puzzleType - The type of puzzle (CLARIFY, EXPAND, REFINE)
+ * @param existingPuzzleId - Optional existing puzzle ID to reuse (prevents duplicate cards)
+ * @param centralQuestion - Optional central question for the puzzle
  */
-export const startPuzzleSession = (puzzleType: 'CLARIFY' | 'EXPAND' | 'REFINE' = 'CLARIFY') => {
-  console.log(`[runtime] ⚡ Starting puzzle session with type: ${puzzleType}`);
+export const startPuzzleSession = (
+  puzzleType: 'CLARIFY' | 'EXPAND' | 'REFINE' = 'CLARIFY',
+  existingPuzzleId?: string,
+  centralQuestion?: string
+) => {
+  console.log(`[runtime] ⚡ Starting puzzle session with type: ${puzzleType}, existingId: ${existingPuzzleId || 'none'}`);
 
   // Clear existing session
   usePuzzleSessionStateStore.getState().clearSession();
@@ -212,7 +227,139 @@ export const startPuzzleSession = (puzzleType: 'CLARIFY' | 'EXPAND' | 'REFINE' =
   console.log(`[runtime] ⚡ Emitting PUZZLE_SESSION_STARTED event...`);
   eventBus.emitType('PUZZLE_SESSION_STARTED', {
     puzzleType,
+    puzzleId: existingPuzzleId, // Pass existing ID to prevent duplicates
+    centralQuestion,
     anchors: [], // Could be passed from UI
   });
   console.log(`[runtime] ⚡ PUZZLE_SESSION_STARTED event emitted`);
+};
+
+// ========== Session Recovery (P3) ==========
+
+interface SessionRecoveryData {
+  sessionState: PuzzleSessionState;
+  anchors: { starting: any; solution: any };
+  pieces: any[];
+  preGeneratedPieces: any;
+  savedAt: number;
+}
+
+/**
+ * Save current session to localStorage for recovery on page refresh
+ */
+export const saveSessionToStorage = (): void => {
+  try {
+    const sessionStore = usePuzzleSessionStateStore.getState();
+    const gameStore = useGameStore.getState();
+
+    const sessionState = sessionStore.sessionState;
+    if (!sessionState) {
+      console.log('[runtime] No active session to save');
+      return;
+    }
+
+    const toSave: SessionRecoveryData = {
+      sessionState,
+      anchors: sessionStore.anchors,
+      pieces: gameStore.pieces,
+      preGeneratedPieces: sessionStore.preGeneratedPieces,
+      savedAt: Date.now(),
+    };
+
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(toSave));
+    console.log('[runtime] Session saved to localStorage');
+  } catch (error) {
+    console.warn('[runtime] Failed to save session:', error);
+  }
+};
+
+/**
+ * Restore session from localStorage if available and not too old
+ * @returns true if session was restored, false otherwise
+ */
+export const restoreSessionFromStorage = (): boolean => {
+  try {
+    const saved = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!saved) {
+      console.log('[runtime] No saved session found');
+      return false;
+    }
+
+    const parsed: SessionRecoveryData = JSON.parse(saved);
+
+    // Check if session is not too old
+    if (Date.now() - parsed.savedAt > SESSION_MAX_AGE_MS) {
+      console.log('[runtime] Saved session expired, clearing');
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      return false;
+    }
+
+    const sessionStore = usePuzzleSessionStateStore.getState();
+    const gameStore = useGameStore.getState();
+
+    // Restore session state
+    sessionStore.setSessionState(parsed.sessionState);
+
+    // Restore anchors
+    if (parsed.anchors.starting) {
+      sessionStore.updateAnchor('STARTING', parsed.anchors.starting.text);
+    }
+    if (parsed.anchors.solution) {
+      sessionStore.updateAnchor('SOLUTION', parsed.anchors.solution.text);
+    }
+
+    // Restore pre-generated pieces pool
+    if (parsed.preGeneratedPieces) {
+      // Directly set preGeneratedPieces (need to access store setter)
+      usePuzzleSessionStateStore.setState({
+        preGeneratedPieces: parsed.preGeneratedPieces,
+      });
+    }
+
+    // Restore placed pieces
+    if (parsed.pieces && parsed.pieces.length > 0) {
+      parsed.pieces.forEach((piece: any) => {
+        gameStore.addPiece(piece);
+      });
+    }
+
+    console.log(`[runtime] Session restored from localStorage (${parsed.pieces?.length || 0} pieces)`);
+    return true;
+  } catch (error) {
+    console.warn('[runtime] Failed to restore session:', error);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    return false;
+  }
+};
+
+/**
+ * Clear saved session from localStorage
+ */
+export const clearSessionStorage = (): void => {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  console.log('[runtime] Session storage cleared');
+};
+
+/**
+ * Enable auto-save on relevant events
+ */
+export const enableSessionAutoSave = (): (() => void) => {
+  const unsubscribe = eventBus.subscribe((event: UIEvent) => {
+    const autoSaveEvents = ['PIECE_PLACED', 'PIECE_DELETED', 'PUZZLE_SESSION_GENERATED'];
+
+    if (autoSaveEvents.includes(event.type)) {
+      // Debounce auto-save to avoid excessive writes
+      setTimeout(() => {
+        saveSessionToStorage();
+      }, 500);
+    }
+
+    // Clear storage when session ends
+    if (event.type === 'PUZZLE_SESSION_COMPLETED') {
+      clearSessionStorage();
+    }
+  });
+
+  console.log('[runtime] Session auto-save enabled');
+  return unsubscribe;
 };

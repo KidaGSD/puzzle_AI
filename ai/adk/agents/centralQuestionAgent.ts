@@ -25,7 +25,7 @@ const QUESTION_OUTPUT_SCHEMA = {
   properties: {
     question: {
       type: 'string',
-      description: 'The central question (10-15 words)'
+      description: 'The central question (5-8 words MAXIMUM, punchy and concise)'
     },
     reasoning: {
       type: 'string',
@@ -56,14 +56,32 @@ const validateQuestion = async (
   const suggestions: string[] = [];
   const question = params.question.trim();
 
-  // Check length (10-15 words)
+  // Check length (5-8 words MAXIMUM for punchy, readable questions)
   const wordCount = question.split(/\s+/).length;
-  if (wordCount < 8) {
-    errors.push(`Too short: ${wordCount} words (need 10-15)`);
-    suggestions.push('Add more context or specificity');
-  } else if (wordCount > 18) {
-    errors.push(`Too long: ${wordCount} words (need 10-15)`);
-    suggestions.push('Focus on the core question');
+  if (wordCount < 4) {
+    errors.push(`Too short: ${wordCount} words (need 5-8)`);
+    suggestions.push('Add a bit more context');
+  } else if (wordCount > 8) {
+    errors.push(`Too long: ${wordCount} words (MAXIMUM 8 words allowed)`);
+    suggestions.push('Cut filler words - 8 words max! Every word must earn its place.');
+  }
+
+  // Check for forbidden compound patterns
+  const forbiddenPatterns = [
+    /and how will/i,
+    /and what/i,
+    /consistently/i,
+    /coherently/i,
+    /across all aspects/i,
+    /supported across/i,
+    /truly mean/i,
+  ];
+
+  for (const pattern of forbiddenPatterns) {
+    if (pattern.test(question)) {
+      errors.push(`Contains forbidden pattern: ${pattern.source}`);
+      suggestions.push('Simplify - avoid compound questions');
+    }
   }
 
   // Must be a question
@@ -181,34 +199,38 @@ const buildCentralQuestionInstruction = (puzzleType: PuzzleType): string => {
     REFINE: 'Focus on prioritization and commitment. Ask what is essential or what to choose.'
   };
 
-  return `You are a Central Question Generator for a design thinking puzzle app.
+  return `You are a Central Question Generator for a design puzzle app.
 
 === YOUR ROLE ===
-Generate a single, compelling central question that will guide the design exploration.
-The question should capture the core design challenge based on the fragments provided.
+Generate ONE short, punchy question. This displays on a small card - brevity is critical.
 
 === PUZZLE TYPE: ${puzzleType} ===
 ${typeGuidance[puzzleType]}
 
-=== REQUIREMENTS ===
-1. LENGTH: 10-15 words (not shorter, not longer)
-2. FORMAT: Must be a question ending with "?"
-3. OPEN-ENDED: Start with "How", "What", "Why", or "In what ways" - NOT yes/no questions
-4. GROUNDED: Draw from the fragment themes and keywords provided
-5. INSPIRING: Should spark creative exploration across all four quadrants (Form, Motion, Expression, Function)
+=== STRICT REQUIREMENTS ===
+1. LENGTH: 5-8 words MAXIMUM. Count your words! Over 8 = REJECTED.
+2. NO compound questions (no "and", "or" connecting multiple questions)
+3. NO filler words ("truly", "really", "unique", "consistently", "across all aspects")
+4. Start with "How" or "What"
+5. End with "?"
 
-=== GOOD EXAMPLES (structure, not content) ===
-- "How might we balance playful interaction with professional credibility in the interface?"
-- "What visual language best captures both innovation and trustworthiness for users?"
-- "In what ways can motion design reinforce the core emotional journey?"
+=== GOOD EXAMPLES (5-8 words) ===
+- "What feeling should users leave with?" (6 words) ✓
+- "How can calm feel professional?" (5 words) ✓
+- "What makes our rhythm distinctive?" (5 words) ✓
+- "How do we embody awakening?" (5 words) ✓
+- "What defines our visual personality?" (5 words) ✓
 
-=== BAD EXAMPLES (avoid) ===
-- "What is the design?" (too vague)
-- "Should we use blue?" (yes/no, too specific)
-- "How can we make it better?" (too generic)
-- Questions longer than 15 words
+=== FORBIDDEN PATTERNS ===
+- "What does X truly mean as the core experience of Y?" (NO - too long!)
+- Questions with "and how will" or "and what"
+- Questions mentioning "consistently", "coherently", "supported across"
+- Questions restating the entire project scope
+- Anything over 8 words
 
-Return your response as JSON with "question" and "reasoning" fields.`;
+REMEMBER: If you can't say it in 8 words, you don't understand it well enough.
+
+Return JSON: { "question": "...", "reasoning": "...", "keyThemes": [...] }`;
 };
 
 export interface CentralQuestionInput {
@@ -251,10 +273,10 @@ export const runCentralQuestionAgent = async (
     }
   });
 
-  // Create agent
+  // Create agent - use gemini-3-pro for complex reasoning tasks
   const agent = new LlmAgent({
     name: 'central_question',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-3-pro',
     description: 'Generate central questions for design puzzles',
     instruction: buildCentralQuestionInstruction(input.puzzleType),
     outputSchema: QUESTION_OUTPUT_SCHEMA,

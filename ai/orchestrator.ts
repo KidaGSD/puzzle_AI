@@ -45,7 +45,8 @@ import {
 import { usePuzzleSessionStateStore } from "../store/puzzleSessionStateStore";
 import { MascotProposal } from "./adk/agents/mascotAgent";
 import { useGameStore } from "../store/puzzleSessionStore";
-import { COLORS, ALL_SHAPES } from "../constants/puzzleGrid";
+import { COLORS, ALL_SHAPES, getSequentialShape } from "../constants/puzzleGrid";
+import { getSequentialColor } from "../constants/colors";
 import { QuadrantType, PieceCategoryType } from "../types";
 import { v4 as uuidv4 } from "uuid";
 
@@ -117,13 +118,15 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
   console.log('[orchestrator] Attaching orchestrator to eventBus...');
 
   // Tiered client system:
-  // - flashClient: Fast/cheap for most tasks (feature extraction, piece generation, mascot)
+  // - flashClient: Fast/cheap for most tasks (text extraction, piece generation, mascot)
   // - proClient: Complex reasoning (synthesis, central question generation)
+  // - imageClient: Image analysis (gemini-3-pro-image)
   const flashClient = createFlashClient();
   const proClient = createProClient();
+  const imageClient = createLLMClient('image');
   const client = flashClient; // Default to flash for backward compatibility
 
-  console.log(`[orchestrator] Using tiered models: flash=${flashClient.model}, pro=${proClient.model}`);
+  console.log(`[orchestrator] Using tiered models: flash=${flashClient.model}, pro=${proClient.model}, image=${imageClient.model}`);
 
   const handleFragmentBurst = async () => {
     const state = store.getState();
@@ -406,9 +409,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     // Get quadrant info for visual pieces
     const mode = payload.mode as DesignMode;
     const quadrant = mode.toLowerCase() as QuadrantType;
-    const color = COLORS[quadrant];
 
+    // Get current attachment count for sequential color/shape
     const gameStore = useGameStore.getState();
+    const attachmentCount = gameStore.getQuadrantAttachmentCount(quadrant);
 
     // If we have an existing piece ID, update it instead of creating new
     if (existingPieceId && output.pieces.length > 0) {
@@ -440,11 +444,16 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     }
 
     // Otherwise, create new pieces
-    output.pieces.forEach((p) => {
+    output.pieces.forEach((p, index) => {
       const pieceId = uuidv4();
-      const shape = ALL_SHAPES[Math.floor(Math.random() * ALL_SHAPES.length)];
+      // Use sequential shape based on current attachment count + index
+      const pieceAttachmentIndex = attachmentCount + index;
+      const shape = getSequentialShape(pieceAttachmentIndex);
       // Use text field as the main content (the declarative statement)
       const text = p.text || p.title || "Key insight here";
+
+      // Get sequential color for this specific piece
+      const pieceColor = getSequentialColor(mode, pieceAttachmentIndex);
 
       // Find a valid position for this piece based on quadrant
       const position = findValidPosition(quadrant, shape, gameStore);
@@ -454,7 +463,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         gameStore.addPiece({
           id: pieceId,
           quadrant,
-          color,
+          color: pieceColor,
           position,
           cells: shape,
           text,
@@ -469,7 +478,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
           imageUrl: p.imageUrl,
         });
 
-        console.log(`[orchestrator] Created visual piece: ${pieceId} at (${position.x}, ${position.y}) - "${text}" (fragment: ${p.fragmentId || 'none'})`);
+        // Increment attachment count for this quadrant
+        gameStore.incrementQuadrantAttachment(quadrant);
+
+        console.log(`[orchestrator] Created visual piece #${pieceAttachmentIndex + 1}: ${pieceId} at (${position.x}, ${position.y}) - "${text}" with color ${pieceColor} (fragment: ${p.fragmentId || 'none'})`);
       }
 
       // Also store in domain layer for persistence
@@ -652,6 +664,140 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
     }
   };
 
+  // ========== Reactive Replenishment ==========
+
+  // Debounced replenish timers per quadrant
+  const replenishTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  const REPLENISH_DEBOUNCE_MS = 500;
+  const REPLENISH_BATCH_SIZE = 4;
+
+  /**
+   * Handle QUADRANT_REPLENISH_NEEDED - debounced replenishment for a single quadrant
+   */
+  const handleQuadrantReplenishNeeded = async (event: UIEvent) => {
+    const payload: any = event.payload || {};
+    const quadrant = payload.quadrant as QuadrantType;
+
+    if (!quadrant) {
+      console.error("[orchestrator] QUADRANT_REPLENISH_NEEDED: missing quadrant");
+      return;
+    }
+
+    // Clear existing timer for this quadrant (debounce)
+    if (replenishTimers[quadrant]) {
+      clearTimeout(replenishTimers[quadrant]);
+    }
+
+    // Set new debounced timer
+    replenishTimers[quadrant] = setTimeout(async () => {
+      delete replenishTimers[quadrant];
+      await executeQuadrantReplenish(quadrant);
+    }, REPLENISH_DEBOUNCE_MS);
+
+    console.log(`[orchestrator] QUADRANT_REPLENISH_NEEDED: scheduled replenish for ${quadrant} (debounced ${REPLENISH_DEBOUNCE_MS}ms)`);
+  };
+
+  /**
+   * Execute the actual replenishment for a quadrant
+   */
+  const executeQuadrantReplenish = async (quadrant: QuadrantType) => {
+    const state = store.getState();
+    const sessionStore = usePuzzleSessionStateStore.getState();
+    const sessionState = sessionStore.sessionState;
+
+    if (!sessionState) {
+      console.log(`[orchestrator] Cannot replenish ${quadrant} - no active session`);
+      return;
+    }
+
+    // Check if already replenishing
+    if (sessionStore.replenishingQuadrants.has(quadrant)) {
+      console.log(`[orchestrator] Already replenishing ${quadrant}, skipping`);
+      return;
+    }
+
+    // Mark as replenishing
+    sessionStore.startReplenishing(quadrant);
+
+    console.log(`[orchestrator] Executing replenish for ${quadrant}...`);
+
+    try {
+      const mode = quadrant.toUpperCase() as DesignMode;
+
+      // Get existing pieces to avoid duplicates (map to PieceSchema format)
+      const existingPiecesRaw = sessionStore.preGeneratedPieces[quadrant]
+        .filter(p => !p.used)
+        .map(p => ({
+          text: p.text || '',
+          priority: p.priority || 3,
+          saturationLevel: 'HIGH',
+          mode,
+          fragmentId: p.fragment_id,
+          fragmentTitle: p.fragment_title,
+          fragmentSummary: p.fragment_summary || '',
+          imageUrl: p.image_url,
+        }));
+      // Cast to PieceSchema[] to satisfy TypeScript
+      const existingPieces = existingPiecesRaw as any[];
+
+      // Build anchors from session store
+      const sessionAnchors = sessionStore.getAnchors();
+
+      // Use ADK regenerate function with correct signature
+      const result = await adkRegenerateQuadrant(
+        mode,
+        {
+          puzzle_type: sessionState.puzzle_type,
+          central_question: sessionState.central_question
+        },
+        state.fragments,
+        sessionAnchors,
+        existingPieces,
+        state.preferenceProfile,
+        state.project.processAim,
+        client
+      );
+
+      // Add pieces to pool - map from PieceSchema to PreGeneratedPiece format
+      const piecesToAdd = result.pieces.map(p => ({
+        text: p.text,
+        priority: p.priority,
+        saturation_level: p.saturationLevel,
+        fragment_id: p.fragmentId,
+        fragment_title: p.fragmentTitle,
+        fragment_summary: p.fragmentSummary,
+        image_url: p.imageUrl,
+        mode,
+        used: false,
+      }));
+
+      sessionStore.finishReplenishing(quadrant, piecesToAdd);
+
+      console.log(`[orchestrator] Replenished ${quadrant} with ${piecesToAdd.length} new pieces`);
+
+      // Emit success event for UI feedback
+      bus.emitType("AI_SUCCESS", {
+        source: 'puzzle_session',
+        message: `Added ${piecesToAdd.length} new pieces to ${quadrant}`,
+      });
+
+    } catch (error) {
+      console.error(`[orchestrator] Replenish failed for ${quadrant}:`, error);
+
+      // Remove from replenishing state on error
+      sessionStore.finishReplenishing(quadrant, []);
+
+      // Emit error (recoverable) - use valid source type
+      bus.emitType("AI_ERROR", {
+        source: 'puzzle_session',
+        message: `Failed to generate more ${quadrant} pieces`,
+        recoverable: true,
+        retryEventType: 'QUADRANT_REPLENISH_NEEDED' as any,
+        retryPayload: { quadrant },
+      } as AIErrorPayload);
+    }
+  };
+
   // ========== Multi-Agent System Handlers ==========
 
   // Callback for puzzle session state updates
@@ -678,8 +824,11 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
     const puzzleType: PuzzleType = payload.puzzleType || "CLARIFY";
     const anchors = payload.anchors || [];
+    // Use existing puzzleId if provided (prevents duplicate card creation)
+    const existingPuzzleId: string | undefined = payload.puzzleId;
 
     console.log(`[orchestrator] ⚡⚡⚡ PUZZLE_SESSION_STARTED: type=${puzzleType}, fragments=${state.fragments.length}`);
+    console.log(`[orchestrator] ⚡⚡⚡ existingPuzzleId from payload: ${existingPuzzleId || 'NOT PROVIDED'}`);
     console.log(`[orchestrator] ⚡⚡⚡ centralQuestion from payload: ${payload.centralQuestion || 'NOT PROVIDED'}`);
 
     try {
@@ -695,6 +844,7 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
         processAim: state.project.processAim,
         puzzleType,
         centralQuestion: payload.centralQuestion,
+        existingPuzzleId, // Pass existing ID to prevent duplicate creation
         fragments: state.fragments,
         anchors,
         preferenceProfile: state.preferenceProfile
@@ -804,7 +954,8 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
 
     // ========== Phase 2: Feature Extraction with Caching ==========
     // Use the feature store for cached extraction, reducing API costs
-    initFeatureStore(client);
+    // Pass imageClient for image analysis (gemini-3-pro-image)
+    initFeatureStore(client, imageClient);
 
     // ═══════════════════════════════════════════════════════════════════════
     // INTELLIGENT FRAGMENT RANKING: Replace fixed 6/4 with scored selection
@@ -1121,6 +1272,19 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       case "PIECE_PLACED":
         // PIECE_PLACED: sync'd from visual layer, update preference profile
         handlePiecePlaced(event);
+        // Check if pool needs replenishment after placement
+        {
+          const payload: any = event.payload || {};
+          const mode = payload.mode as DesignMode;
+          console.log(`[orchestrator] PIECE_PLACED: mode=${mode}`);
+          if (mode) {
+            const quadrant = mode.toLowerCase() as QuadrantType;
+            console.log(`[orchestrator] Checking replenish for quadrant=${quadrant}`);
+            usePuzzleSessionStateStore.getState().checkAndReplenish(quadrant);
+          } else {
+            console.warn('[orchestrator] PIECE_PLACED: no mode in payload');
+          }
+        }
         break;
       case "PIECE_EDITED":
         // PIECE_EDITED: user edited piece text
@@ -1129,6 +1293,15 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       case "PIECE_DELETED":
         // PIECE_DELETED: user removed piece from board
         handlePieceDeleted(event);
+        // Check if pool needs replenishment after deletion
+        {
+          const payload: any = event.payload || {};
+          const mode = payload.mode as DesignMode;
+          if (mode) {
+            const quadrant = mode.toLowerCase() as QuadrantType;
+            usePuzzleSessionStateStore.getState().checkAndReplenish(quadrant);
+          }
+        }
         break;
       // Multi-agent system events - ADK is now the primary workflow
       case "PUZZLE_SESSION_STARTED":
@@ -1143,6 +1316,10 @@ export const attachOrchestrator = (bus: EventBus, store: ContextStore) => {
       case "QUADRANT_REGENERATE":
         console.log('[orchestrator] handling QUADRANT_REGENERATE');
         safeAsync(() => handleQuadrantRegenerate(event), "QUADRANT_REGENERATE");
+        break;
+      case "QUADRANT_REPLENISH_NEEDED":
+        console.log('[orchestrator] handling QUADRANT_REPLENISH_NEEDED');
+        safeAsync(() => handleQuadrantReplenishNeeded(event), "QUADRANT_REPLENISH_NEEDED");
         break;
       default:
         break;

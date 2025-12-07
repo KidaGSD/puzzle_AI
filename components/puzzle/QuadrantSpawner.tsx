@@ -102,6 +102,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
         markPieceUsed,
         isGenerating,
         sessionState,
+        isReplenishing,
     } = usePuzzleSessionStateStore();
 
     const [isDragging, setIsDragging] = useState(false);
@@ -110,6 +111,10 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
 
     // Get pre-generated piece for this quadrant, or fallback to random label
     const preGeneratedPiece = useMemo(() => getNextPiece(quadrant), [quadrant, dragKey, sessionState]);
+    // Check if this quadrant is currently replenishing
+    const isQuadrantReplenishing = isReplenishing(quadrant);
+    // Only show "Fulfilled" if pool is empty AND not replenishing
+    const isFulfilled = !preGeneratedPiece && sessionState !== null && !isGenerating && !isQuadrantReplenishing;
     const [currentLabel, setCurrentLabel] = useState(preGeneratedPiece?.text || randomLabel(quadrant));
     const [currentPriority, setCurrentPriority] = useState<PiecePriority>(preGeneratedPiece?.priority || 3);
 
@@ -484,15 +489,28 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                 <div className="relative group" ref={buttonRef}>
                     {/* Main spawner button */}
                     <div
-                        className="w-24 h-10 rounded-xl flex items-center justify-center px-3 transition-all duration-200 group-hover:!bg-[#000000]"
+                        className={`w-24 h-10 rounded-xl flex items-center justify-center px-3 transition-all duration-200 ${
+                            isFulfilled ? 'opacity-50 cursor-default' : 'group-hover:!bg-[#000000]'
+                        }`}
                         style={{
                             backgroundColor: color,
                             transform: isDragging ? 'translateY(2px) scale(0.98)' : 'translateY(0) scale(1)',
                         }}
                     >
-                        <span className="text-[11px] font-bold tracking-wider text-white" style={{ textTransform: 'capitalize' }}>
-                            {label}
-                        </span>
+                        {isQuadrantReplenishing && !preGeneratedPiece ? (
+                            <div className="flex items-center gap-1.5">
+                                <div className="animate-spin w-3 h-3 border-2 border-white/30 border-t-white rounded-full" />
+                                <span className="text-[9px] font-medium text-white/80">Loading...</span>
+                            </div>
+                        ) : isFulfilled ? (
+                            <span className="text-[9px] font-medium tracking-wider text-white/80" style={{ textTransform: 'uppercase' }}>
+                                Fulfilled
+                            </span>
+                        ) : (
+                            <span className="text-[11px] font-bold tracking-wider text-white" style={{ textTransform: 'capitalize' }}>
+                                {label}
+                            </span>
+                        )}
                     </div>
 
                     {/* Session puzzleType indicator
@@ -505,7 +523,8 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                         </span>
                     </div> */}
 
-                    {/* Draggable area */}
+                    {/* Draggable area - disabled when fulfilled or replenishing without piece */}
+                    {!isFulfilled && !(isQuadrantReplenishing && !preGeneratedPiece) && (
                     <motion.div
                         key={dragKey}
                         drag
@@ -592,6 +611,7 @@ export const QuadrantSpawner: React.FC<QuadrantSpawnerProps> = ({ quadrant, labe
                             </motion.div>
                         )}
                     </motion.div>
+                    )}
                 </div>
             </div>
         </>

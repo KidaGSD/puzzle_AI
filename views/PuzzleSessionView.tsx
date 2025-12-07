@@ -60,7 +60,8 @@ export const PuzzleSessionView: React.FC<PuzzleSessionViewProps> = ({
       console.log(`[PuzzleSessionView] ⚡⚡⚡ Found puzzle: ${foundPuzzle ? foundPuzzle.centralQuestion : 'NOT FOUND'}`);
 
       sessionStartedRef.current = puzzleId;
-      startPuzzleSession(puzzleType);
+      // Pass existing puzzleId and centralQuestion to prevent duplicate card creation
+      startPuzzleSession(puzzleType, puzzleId, foundPuzzle?.centralQuestion);
     } else {
       console.log(`[PuzzleSessionView] ⚡⚡⚡ Session already started for puzzleId: ${puzzleId}, skipping`);
     }

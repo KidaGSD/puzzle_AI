@@ -52,16 +52,33 @@ export class FragmentFeatureStore {
   private store: Map<string, StoredFeatures> = new Map();
   private refreshQueue: Set<string> = new Set();
   private client: LLMClient | null = null;
+  private imageClient: LLMClient | null = null;  // Separate client for image analysis
 
-  constructor(client?: LLMClient) {
+  constructor(client?: LLMClient, imageClient?: LLMClient) {
     this.client = client || null;
+    this.imageClient = imageClient || null;
   }
 
   /**
-   * Set the LLM client (can be set after construction)
+   * Set the LLM clients (can be set after construction)
+   * @param client - Client for text extraction (flash tier)
+   * @param imageClient - Client for image analysis (image tier, optional)
    */
-  setClient(client: LLMClient): void {
+  setClient(client: LLMClient, imageClient?: LLMClient): void {
     this.client = client;
+    if (imageClient) {
+      this.imageClient = imageClient;
+    }
+  }
+
+  /**
+   * Get the appropriate client for a fragment type
+   */
+  private getClientForType(fragmentType: string): LLMClient | null {
+    if (fragmentType === 'IMAGE' && this.imageClient) {
+      return this.imageClient;
+    }
+    return this.client;
   }
 
   /**
@@ -266,13 +283,14 @@ export class FragmentFeatureStore {
         uniqueInsight = textFeatures.uniqueInsight || "";
       }
 
-      // Extract image features
+      // Extract image features - use imageClient if available for better quality
       if (isImage && fragment.content) {
-        if (this.client && !this.client.isMock) {
+        const imgClient = this.imageClient || this.client;
+        if (imgClient && !imgClient.isMock) {
           imageFeatures = await extractImageFeaturesWithVision(
             fragment.content,
             fragment.title || "Image",
-            this.client
+            imgClient
           );
         } else {
           imageFeatures = extractImageFeaturesFromMetadata(
@@ -350,11 +368,16 @@ export const getFeatureStore = (): FragmentFeatureStore => {
   return globalStore;
 };
 
-export const initFeatureStore = (client: LLMClient): FragmentFeatureStore => {
+/**
+ * Initialize the feature store with LLM clients
+ * @param client - Client for text extraction (flash tier)
+ * @param imageClient - Optional client for image analysis (image tier)
+ */
+export const initFeatureStore = (client: LLMClient, imageClient?: LLMClient): FragmentFeatureStore => {
   if (!globalStore) {
-    globalStore = new FragmentFeatureStore(client);
+    globalStore = new FragmentFeatureStore(client, imageClient);
   } else {
-    globalStore.setClient(client);
+    globalStore.setClient(client, imageClient);
   }
   return globalStore;
 };

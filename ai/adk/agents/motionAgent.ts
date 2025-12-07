@@ -124,7 +124,7 @@ ${avoidStr}
 - "Rapid whisk energy" (speed + verb + feeling)
 - "Gentle drift settle" (easing + motion + endpoint)
 
-Generate 6-8 pieces for the MOTION quadrant.`;
+Generate 8-10 pieces for the MOTION quadrant.`;
 };
 
 // ========== Validation ==========
@@ -180,6 +180,7 @@ export const runMotionAgent = async (
       let fragmentId = p.fragment_id || p.fragmentId;
       let fragmentTitle = p.fragment_title || p.fragmentTitle;
       let fragmentSummary = p.fragment_summary || p.fragmentSummary || '';
+      let imageUrl = p.image_url || p.imageUrl;
 
       if (fragmentId) {
         const srcFrag = input.fragments.find(f => f.id === fragmentId);
@@ -187,6 +188,10 @@ export const runMotionAgent = async (
           if (!fragmentTitle) fragmentTitle = srcFrag.title;
           if (!fragmentSummary || fragmentSummary.length < 15) {
             fragmentSummary = `From "${srcFrag.title}": ${srcFrag.uniqueInsight || srcFrag.summary?.slice(0, 80) || 'Motion/rhythm reference'}`;
+          }
+          // CRITICAL: Pull imageUrl from source fragment if it's an IMAGE type
+          if (!imageUrl && srcFrag.type === 'IMAGE' && srcFrag.imageUrl) {
+            imageUrl = srcFrag.imageUrl;
           }
         }
       }
@@ -203,7 +208,7 @@ export const runMotionAgent = async (
         fragmentId,
         fragmentTitle,
         fragmentSummary,
-        imageUrl: p.image_url || p.imageUrl,
+        imageUrl,
         qualityMeta: {
           wordCount: text.split(/\s+/).length,
           isQuestion: false,

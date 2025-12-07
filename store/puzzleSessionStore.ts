@@ -95,6 +95,8 @@ export const domainToVisualPiece = (
 interface GameState {
   pieces: Piece[];
   currentPuzzleId: UUID | null;
+  // Track number of pieces attached per quadrant for sequential color/shape
+  quadrantAttachmentCounts: Record<QuadrantType, number>;
 
   // Actions
   setCurrentPuzzleId: (puzzleId: UUID | null) => void;
@@ -106,6 +108,10 @@ interface GameState {
   updatePieceTitleAndContent: (id: string, title: string, content: string) => void;
   removePiece: (id: string) => void;
   clearPieces: () => void;
+
+  // Quadrant attachment tracking
+  getQuadrantAttachmentCount: (quadrant: QuadrantType) => number;
+  incrementQuadrantAttachment: (quadrant: QuadrantType) => void;
 
   // Collision detection
   checkCollision: (pieceId: string | null, targetPos: Position, cells: Position[]) => boolean;
@@ -130,6 +136,12 @@ const isInsideCenterCard = (x: number, y: number) => {
 export const useGameStore = create<GameState>((set, get) => ({
   pieces: [],
   currentPuzzleId: null,
+  quadrantAttachmentCounts: {
+    form: 0,
+    motion: 0,
+    expression: 0,
+    function: 0,
+  },
 
   setCurrentPuzzleId: (puzzleId) => set({ currentPuzzleId: puzzleId }),
 
@@ -148,6 +160,19 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   removePiece: (id) => set((state) => ({ pieces: state.pieces.filter((p) => p.id !== id) })),
+
+  getQuadrantAttachmentCount: (quadrant) => {
+    return get().quadrantAttachmentCounts[quadrant];
+  },
+
+  incrementQuadrantAttachment: (quadrant) => {
+    set((state) => ({
+      quadrantAttachmentCounts: {
+        ...state.quadrantAttachmentCounts,
+        [quadrant]: state.quadrantAttachmentCounts[quadrant] + 1,
+      },
+    }));
+  },
 
   updatePiecePosition: (id, newPos) =>
     set((state) => ({
@@ -202,7 +227,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       }),
     })),
 
-  clearPieces: () => set({ pieces: [] }),
+  clearPieces: () => set({
+    pieces: [],
+    quadrantAttachmentCounts: {
+      form: 0,
+      motion: 0,
+      expression: 0,
+      function: 0,
+    },
+  }),
 
   getPiecesForSync: () => {
     const { pieces, currentPuzzleId } = get();

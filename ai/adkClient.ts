@@ -28,8 +28,11 @@ export interface JsonSchema {
 
 /**
  * Model tier for different task complexities
+ * - flash: Fast tasks (gemini-2.5-flash)
+ * - pro: Complex reasoning and management (gemini-3-pro)
+ * - image: Image analysis (gemini-3-pro-image)
  */
-export type ModelTier = 'flash' | 'pro';
+export type ModelTier = 'flash' | 'pro' | 'image';
 
 /**
  * LLM Client interface with text, multimodal, and structured output support
@@ -78,15 +81,20 @@ const env = (typeof import.meta !== "undefined" && (import.meta as any).env) || 
  *
  * Available models (as of Dec 2024):
  * - gemini-2.5-flash: Fast, efficient, good for most tasks (RECOMMENDED for speed)
- * - gemini-2.5-pro: Best quality, complex reasoning (use sparingly)
+ * - gemini-3-pro: Best quality, complex reasoning and management tasks
+ * - gemini-3-pro-image: Multi-modal generative model for image analysis
  *
  * Rate limits (free tier):
- * - Flash: 15 RPM, 1M TPM, 1500 RPD
- * - Pro: 2 RPM, 32K TPM, 50 RPD
+ * - gemini-2.5-flash: 1K RPM, 1M TPM, 10K RPD
+ * - gemini-3-pro: 25 RPM, 1M TPM, 250 RPD
+ * - gemini-3-pro-image: 20 RPM, 100K TPM, 250 RPD
+ *
+ * DO NOT USE gemini-2.0-flash-exp - it has very low quota limits!
  */
 const MODELS = {
   flash: 'gemini-2.5-flash',
-  pro: 'gemini-2.5-pro',
+  pro: 'gemini-3-pro',
+  image: 'gemini-3-pro-image',
 } as const;
 
 const apiKey =

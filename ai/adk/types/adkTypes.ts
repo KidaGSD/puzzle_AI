@@ -245,7 +245,8 @@ export class LlmAgent {
 
   constructor(options: LlmAgentOptions) {
     this.name = options.name;
-    this.model = options.model || 'gemini-2.0-flash';
+    // Default to gemini-2.5-flash - DO NOT use gemini-2.0-flash-exp (quota issues)
+    this.model = options.model || 'gemini-2.5-flash';
     this.description = options.description || '';
     this.instruction = options.instruction || '';
     this.tools = options.tools || [];

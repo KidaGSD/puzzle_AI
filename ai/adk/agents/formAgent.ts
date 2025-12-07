@@ -125,7 +125,7 @@ ${avoidStr}
 - "Heavy rounded silhouette" (weight + shape)
 - "Layered organic texture" (structure + material)
 
-Generate 6-8 pieces for the FORM quadrant.`;
+Generate 8-10 pieces for the FORM quadrant.`;
 };
 
 // ========== Validation ==========
@@ -188,6 +188,7 @@ export const runFormAgent = async (
       let fragmentId = p.fragment_id || p.fragmentId;
       let fragmentTitle = p.fragment_title || p.fragmentTitle;
       let fragmentSummary = p.fragment_summary || p.fragmentSummary || '';
+      let imageUrl = p.image_url || p.imageUrl;
 
       // Backfill from input fragments
       if (fragmentId) {
@@ -196,6 +197,10 @@ export const runFormAgent = async (
           if (!fragmentTitle) fragmentTitle = srcFrag.title;
           if (!fragmentSummary || fragmentSummary.length < 15) {
             fragmentSummary = `From "${srcFrag.title}": ${srcFrag.uniqueInsight || srcFrag.summary?.slice(0, 80) || 'Visual structure reference'}`;
+          }
+          // CRITICAL: Pull imageUrl from source fragment if it's an IMAGE type
+          if (!imageUrl && srcFrag.type === 'IMAGE' && srcFrag.imageUrl) {
+            imageUrl = srcFrag.imageUrl;
           }
         }
       }
@@ -213,7 +218,7 @@ export const runFormAgent = async (
         fragmentId,
         fragmentTitle,
         fragmentSummary,
-        imageUrl: p.image_url || p.imageUrl,
+        imageUrl,
         qualityMeta: {
           wordCount: text.split(/\s+/).length,
           isQuestion: false,

@@ -123,7 +123,7 @@ ${avoidStr}
 - "Quick-scan hierarchy" (behavior + structure)
 - "Retail visibility focus" (context + priority)
 
-Generate 6-8 pieces for the FUNCTION quadrant.`;
+Generate 8-10 pieces for the FUNCTION quadrant.`;
 };
 
 // ========== Validation ==========
@@ -179,6 +179,7 @@ export const runFunctionAgent = async (
       let fragmentId = p.fragment_id || p.fragmentId;
       let fragmentTitle = p.fragment_title || p.fragmentTitle;
       let fragmentSummary = p.fragment_summary || p.fragmentSummary || '';
+      let imageUrl = p.image_url || p.imageUrl;
 
       if (fragmentId) {
         const srcFrag = input.fragments.find(f => f.id === fragmentId);
@@ -186,6 +187,10 @@ export const runFunctionAgent = async (
           if (!fragmentTitle) fragmentTitle = srcFrag.title;
           if (!fragmentSummary || fragmentSummary.length < 15) {
             fragmentSummary = `From "${srcFrag.title}": ${srcFrag.uniqueInsight || srcFrag.summary?.slice(0, 80) || 'Functional context reference'}`;
+          }
+          // CRITICAL: Pull imageUrl from source fragment if it's an IMAGE type
+          if (!imageUrl && srcFrag.type === 'IMAGE' && srcFrag.imageUrl) {
+            imageUrl = srcFrag.imageUrl;
           }
         }
       }
@@ -202,7 +207,7 @@ export const runFunctionAgent = async (
         fragmentId,
         fragmentTitle,
         fragmentSummary,
-        imageUrl: p.image_url || p.imageUrl,
+        imageUrl,
         qualityMeta: {
           wordCount: text.split(/\s+/).length,
           isQuestion: false,

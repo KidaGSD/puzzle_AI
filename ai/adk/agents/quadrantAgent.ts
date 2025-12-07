@@ -323,7 +323,8 @@ const afterModelCallback = async (
 export const createQuadrantAgentConfig = (mode: DesignMode): LlmAgentOptions => {
   return {
     name: `quadrant_${mode.toLowerCase()}`,
-    model: 'gemini-2.0-flash',
+    // Use gemini-2.5-flash for fast piece generation
+    model: 'gemini-2.5-flash',
     description: `Generate puzzle pieces for the ${mode} quadrant`,
     instruction: buildQuadrantInstruction(mode),
 

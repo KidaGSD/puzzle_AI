@@ -1,4 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { eventBus } from '../../store/runtime'
+
+// ========== Onboarding Configuration ==========
+
+const ONBOARDING_MESSAGES = [
+  "Welcome! Drag colorful blocks near the central question",  // Step 1
+  "Dark = Core ideas | Light = Exploration paths",            // Step 2
+  "Keep adding, or click 'End Puzzle' for summary"            // Step 3
+];
+
+const BUBBLE_AUTO_SHOW_DELAY = 3000;   // Show bubble 3s after component mounts
+const BUBBLE_AUTO_HIDE_DELAY = 5000;   // Hide bubble after 5s
+const ONBOARDING_STORAGE_KEY = 'puzzle_mascot_onboarding_step';
 
 interface MascotButtonProps {
   onClick: () => void
@@ -7,21 +20,85 @@ interface MascotButtonProps {
 /**
  * Floating mascot button positioned on the left side below the toolbar.
  * Acts as the single AI entry point for starting puzzles and getting suggestions.
+ *
+ * Includes auto-appearing onboarding hints for new users:
+ * 1. Welcome hint (appears automatically)
+ * 2. Dark/Light explanation (appears after first piece placed)
+ * 3. End puzzle hint (appears after 3 pieces placed)
  */
 export function MascotButton({ onClick }: MascotButtonProps) {
   const [showBubble, setShowBubble] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
 
-  // Show a hint bubble occasionally
+  // Onboarding state
+  const [onboardingStep, setOnboardingStep] = useState<number>(() => {
+    const saved = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    return saved ? parseInt(saved, 10) : 0;
+  });
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(() => {
+    const step = localStorage.getItem(ONBOARDING_STORAGE_KEY);
+    return step ? parseInt(step, 10) >= ONBOARDING_MESSAGES.length : false;
+  });
+
+  // Get current bubble message
+  const getBubbleMessage = useCallback((): string => {
+    if (hasCompletedOnboarding) {
+      return "Stuck? Click me to start a thinking puzzle!";
+    }
+    return ONBOARDING_MESSAGES[onboardingStep] || ONBOARDING_MESSAGES[0];
+  }, [hasCompletedOnboarding, onboardingStep]);
+
+  // Advance onboarding to next step
+  const advanceOnboarding = useCallback(() => {
+    setOnboardingStep(prev => {
+      const next = prev + 1;
+      if (next >= ONBOARDING_MESSAGES.length) {
+        setHasCompletedOnboarding(true);
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, String(ONBOARDING_MESSAGES.length));
+        return prev;
+      }
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, String(next));
+      // Show the next hint
+      setShowBubble(true);
+      setTimeout(() => setShowBubble(false), BUBBLE_AUTO_HIDE_DELAY);
+      return next;
+    });
+  }, []);
+
+  // Show initial bubble on mount (auto-appear behavior)
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowBubble(true);
-      // Hide after 5 seconds
-      setTimeout(() => setShowBubble(false), 5000);
-    }, 3000); // Show after 3s
+      // Hide after delay
+      setTimeout(() => setShowBubble(false), BUBBLE_AUTO_HIDE_DELAY);
+    }, BUBBLE_AUTO_SHOW_DELAY);
 
     return () => clearTimeout(timer);
   }, []);
+
+  // Listen for piece placement events to advance onboarding
+  useEffect(() => {
+    if (hasCompletedOnboarding) return;
+
+    let pieceCount = 0;
+
+    const unsubscribe = eventBus.subscribe((event) => {
+      if (event.type === 'PIECE_PLACED') {
+        pieceCount++;
+
+        // Advance onboarding based on piece count
+        if (pieceCount === 1 && onboardingStep === 0) {
+          // First piece placed - show step 2
+          advanceOnboarding();
+        } else if (pieceCount === 3 && onboardingStep === 1) {
+          // Three pieces placed - show step 3
+          advanceOnboarding();
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [hasCompletedOnboarding, onboardingStep, advanceOnboarding]);
 
   const handleMouseEnter = () => {
     setIsHovered(true);
@@ -37,15 +114,29 @@ export function MascotButton({ onClick }: MascotButtonProps) {
       <div
         className={`
           absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-[#FFB5FA] px-4 py-3 rounded-lg shadow-lg
-          border border-[#1C1C1C]/10 max-w-[200px] transform transition-all duration-300 origin-left
+          border border-[#1C1C1C]/10 max-w-[220px] transform transition-all duration-300 origin-left
           ${showBubble ? 'opacity-100 scale-100 translate-x-0' : 'opacity-0 scale-90 -translate-x-2 pointer-events-none'}
         `}
       >
         <p className="text-sm text-[#1C1C1C] font-semibold leading-relaxed">
-          Stuck? Click me to start a thinking puzzle!
+          {getBubbleMessage()}
         </p>
-        {/* Arrow pointing left */}
-        <span className="absolute left-0 bottom-4 -translate-x-full border-8 border-transparent border-r-[#FFB5FA]"></span>
+        {/* Arrow pointing left to mascot */}
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full border-8 border-transparent border-r-[#FFB5FA]"></span>
+
+        {/* Onboarding step indicator (for non-completed users) */}
+        {!hasCompletedOnboarding && (
+          <div className="flex gap-1 mt-2 justify-center">
+            {ONBOARDING_MESSAGES.map((_, idx) => (
+              <div
+                key={idx}
+                className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                  idx <= onboardingStep ? 'bg-[#1C1C1C]' : 'bg-[#1C1C1C]/30'
+                }`}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Mascot Button */}
@@ -59,7 +150,7 @@ export function MascotButton({ onClick }: MascotButtonProps) {
       >
         {/* Mascot Image */}
         <img
-          src={isHovered ? "/mascot-hovered.png" : "/mascot-design.svg"}
+          src={isHovered ? "/mascot-hovered.svg" : "/mascot-design.svg"}
           alt="Mascot"
           className="w-20 h-20 object-contain drop-shadow-md transform transition-transform duration-300 group-hover:scale-110 group-active:scale-95 animate-float"
         />

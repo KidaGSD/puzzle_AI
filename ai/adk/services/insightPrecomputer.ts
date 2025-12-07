@@ -77,8 +77,8 @@ export class InsightPrecomputer {
   private proClient: LLMClient;
   private computing: boolean = false;
   private recomputeTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly RECOMPUTE_INTERVAL_MS = 30000; // 30 seconds
-  private readonly STALE_THRESHOLD_MS = 60000; // 1 minute
+  private readonly RECOMPUTE_INTERVAL_MS = 15000; // 15 seconds (faster refresh)
+  private readonly STALE_THRESHOLD_MS = 300000; // 5 minutes (longer validity)
 
   constructor() {
     this.proClient = createProClient();
